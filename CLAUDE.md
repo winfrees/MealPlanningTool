@@ -43,7 +43,8 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
 - `src/mealplan/core/`: `units.py`, `parser.py` (ingredient lines), `scaling.py`,
   `normalizer.py` (catalog matching), `library.py` (drafts, copies/variants, families, ratings),
   `preferences.py`, `recipe_facts.py`, `planner.py` (pure; ADR-0005), `components.py`,
-  `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning).
+  `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning),
+  `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`

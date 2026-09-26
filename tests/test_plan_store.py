@@ -53,7 +53,8 @@ def test_history_blocks_last_weeks_dinners(golden_db):
     first = {m.ref for m in plan_store.saved_plan(golden_db, START).meals if m.meal is Meal.DINNER}
     nxt = START + timedelta(days=7)
     second = plan_store.plan_and_save(golden_db, nxt, HouseholdPrefs())
-    repeats = first & {m.ref for m in second.meals if m.meal is Meal.DINNER}
+    second_refs = {m.ref for m in second.meals if m.meal is Meal.DINNER}
+    repeats = {r for r in first & second_refs if r and not r.startswith("house-")}
     assert not repeats or any("repeat window" in c for c in second.conflicts)
 
 

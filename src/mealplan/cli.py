@@ -16,11 +16,12 @@ from sqlalchemy.orm import Session
 from mealplan import __version__, db
 from mealplan.config import get_settings
 from mealplan.core import library, plan_store
+from mealplan.core.base_week import rotation, seed_house_meals
 from mealplan.core.components import load_components_csv, seed_components
 from mealplan.core.library import LibraryError
 from mealplan.core.normalizer import Catalog, seed_catalog
 from mealplan.core.plan_store import PlanError
-from mealplan.core.preferences import PrefsError, load_prefs, set_pref
+from mealplan.core.preferences import PrefsError, Weekday, load_prefs, set_pref
 from mealplan.core.prep import build_prep
 from mealplan.core.render import day_card, day_cards_markdown, plan_markdown, prep_markdown
 from mealplan.core.scaling import scale_quantity
@@ -131,8 +132,10 @@ def catalog_seed(
     with _session() as s:
         added, updated = seed_catalog(s, catalog)
         c_added, c_updated = seed_components(s, components)
+        house = seed_house_meals(s, path.parent / "house_meals.json", Catalog.from_db(s))
     console.print(f"Catalog: {added} added, {updated} updated.")
     console.print(f"Prep components: {c_added} added, {c_updated} updated.")
+    console.print(f"House meals added: {', '.join(house) or 'none (already there)'}.")
 
 
 @recipes_app.command("add")
@@ -475,3 +478,37 @@ def prep_show(start: StartOption = None) -> None:
     with _session() as s:
         result = plan_store.saved_plan(s, _week_start(s, _as_date(start)))
         typer.echo(prep_markdown(build_prep(result, plan_store.plan_dishes(s, result))))
+
+
+@plan_app.command("base")
+def plan_base(
+    day: Annotated[Weekday | None, typer.Argument(help="Day to change, e.g. tue.")] = None,
+    meal: Annotated[
+        str | None,
+        typer.Argument(help='A recipe ref, refs to rotate ("house-002,house-003"), or "menu".'),
+    ] = None,
+) -> None:
+    """Show or change the base week: standing dinners every plan starts from."""
+    with _session() as s:
+        prefs = load_prefs(s)
+        base = dict(prefs.base_week)
+        if day is not None:
+            if meal is None:
+                raise typer.BadParameter("give a recipe ref, refs to rotate, or 'menu'")
+            if meal == "menu":
+                base.pop(day, None)
+            else:
+                refs = [r.strip() for r in meal.replace("|", ",").split(",") if r.strip()]
+                for ref in refs:
+                    library.get_recipe(s, ref)  # must exist
+                base[day] = "|".join(refs)
+            prefs = set_pref(s, "base_week", json.dumps({d.value: v for d, v in base.items()}))
+        titles = {r.ref: r.title for r in s.scalars(select(Recipe))}
+        for weekday in Weekday:
+            rule = prefs.base_week.get(weekday)
+            if rule is None:
+                typer.echo(f"{weekday.value}: menu (the planner chooses)")
+                continue
+            names = " / ".join(f"{titles.get(r, r)} ({r})" for r in rotation(rule))
+            label = "alternates " if len(rotation(rule)) > 1 else ""
+            typer.echo(f"{weekday.value}: {label}{names}")

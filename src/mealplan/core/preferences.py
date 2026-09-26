@@ -50,6 +50,15 @@ class HouseholdPrefs(BaseModel):
     max_leftover_lunches: int = Field(default=3, ge=0)
     leftover_exclude_proteins: list[str] = Field(default_factory=lambda: ["fish", "shellfish"])
     repeat_window_days: int = Field(default=14, ge=0)
+    # Standing dinners every week starts from: weekday -> recipe ref, or refs separated by
+    # "|" to rotate week by week. Days not listed are chosen by the planner.
+    base_week: dict[Weekday, str] = Field(
+        default_factory=lambda: {
+            Weekday.MON: "house-001",  # salmon, jasmine rice, broccoli
+            Weekday.TUE: "house-002|house-003",  # tacos: refried beans, then meat
+            Weekday.FRI: "house-004",  # pizza, ordered in
+        }
+    )
 
 
 class PrefsError(ValueError):

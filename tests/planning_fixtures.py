@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mealplan.core import library
+from mealplan.core.base_week import seed_house_meals
 from mealplan.core.components import ComponentSpec, load_components_csv, seed_components
 from mealplan.core.normalizer import Catalog
 from mealplan.core.parser import parse_ingredient
@@ -65,14 +66,22 @@ def dish_from_json(raw: dict[str, Any], catalog: Catalog) -> Dish:
     )
 
 
+def house_meals() -> list[dict[str, Any]]:
+    data = json.loads((ROOT / "data" / "house_meals.json").read_text(encoding="utf-8"))
+    return [{**r, "role": "dinner"} for r in data["recipes"]]
+
+
 def golden_inputs(
     catalog: Catalog,
     locked: dict[tuple[date, Meal], str] | None = None,
     drop: set[str] | None = None,
+    history: dict[str, date] | None = None,
 ) -> PlanInputs:
     data = load_golden()
     dishes = tuple(
-        dish_from_json(r, catalog) for r in data["recipes"] if r["ref"] not in (drop or set())
+        dish_from_json(r, catalog)
+        for r in [*data["recipes"], *house_meals()]
+        if r["ref"] not in (drop or set())
     )
     components: tuple[ComponentSpec, ...] = tuple(
         load_components_csv(ROOT / "data" / "components.csv")
@@ -80,7 +89,10 @@ def golden_inputs(
     return PlanInputs(
         dishes=dishes,
         components=components,
-        history={ref: date.fromisoformat(d) for ref, d in data["history"].items()},
+        history={
+            **{ref: date.fromisoformat(d) for ref, d in data["history"].items()},
+            **(history or {}),
+        },
         expiring=frozenset(data["expiring"]),
         locked=locked or {},
     )
@@ -141,4 +153,5 @@ def populate_golden(session: Session, catalog: Catalog) -> None:
         )
     )
     seed_components(session, load_components_csv(ROOT / "data" / "components.csv"))
+    seed_house_meals(session, ROOT / "data" / "house_meals.json", catalog)
     session.flush()

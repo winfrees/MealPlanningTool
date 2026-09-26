@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-26
-- Requirements: PLN-1, PLN-2, PLN-3, PLN-4, PLN-5, PLN-7, PLN-8, REC-9, NFR-1, NFR-3
+- Requirements: PLN-1, PLN-2, PLN-3, PLN-4, PLN-5, PLN-7, PLN-8, PLN-9, REC-9, NFR-1, NFR-3
 
 ## Context
 
@@ -23,6 +23,10 @@ reproducible (same inputs and seed give the same plan) and explainable when a ru
 - **Score**: favorites (unrated counts as average), season fit, expiring inventory, novelty,
   and a leftover fit on nights before the late-week lunch days, plus jitter seeded per recipe
   (`Random(f"{seed}:{ref}")`) that only breaks near-ties.
+- The base week (PLN-9) is placed right after manual overrides: standing meals from
+  `prefs.base_week`, rotations picked as "the one after the last planned" (by week number when
+  none has been planned). They skip the repeat window and weeknight-time rule and are removed
+  from the pool for other days. Order-in nights use no protein allowance and make no leftovers.
 - Weeknights choose first (tightest rules). Leftovers fill lunch days from Friday backwards;
   template lunches fill the start of the week, when Sunday-prepped food is freshest.
 - Prep is list scheduling on one cook and limited equipment (`core/prep.py`).

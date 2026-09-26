@@ -54,7 +54,9 @@ def test_hard_rules(plan, inputs):
     assert "core-023" not in refs, "cooked within the 14-day repeat window"
     discovered = [r for r in refs if dishes[r].collection is Collection.DISCOVERED]
     assert len(discovered) <= 1, "PLN-8"
-    proteins = Counter(recipe_facts.protein(dishes[r]) for r in refs)
+    proteins = Counter(
+        recipe_facts.protein(dishes[r]) for r in refs if "order-in" not in dishes[r].tags
+    )
     assert max(proteins.values()) <= 2, proteins
     families = [dishes[r].family for r in refs if dishes[r].family]
     assert len(families) == len(set(families)), "REC-9: a family is one dish"
@@ -167,7 +169,8 @@ def test_any_seed_satisfies_the_hard_rules(catalog, seed):
     assert None not in refs
     assert len(set(refs)) == 7
     assert "core-001" not in refs and "core-023" not in refs
-    assert max(Counter(recipe_facts.protein(dishes[r]) for r in refs).values()) <= 2
+    cooked = [r for r in refs if "order-in" not in dishes[r].tags]
+    assert max(Counter(recipe_facts.protein(dishes[r]) for r in cooked).values()) <= 2
     assert sum(dishes[r].collection is Collection.DISCOVERED for r in refs) <= 1
     for m in dinners(plan):
         if m.date in WEEKNIGHTS:

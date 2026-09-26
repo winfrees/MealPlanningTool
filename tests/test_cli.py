@@ -123,6 +123,20 @@ def test_planning_workflow_end_to_end(tmp_path, monkeypatch, catalog):
 
     result = runner.invoke(app, ["prefs", "show"])
     assert "dinner_servings: 4" in result.output
+
+    result = runner.invoke(app, ["plan", "base"])
+    assert result.exit_code == 0, result.output
+    assert "mon: Salmon, Jasmine Rice and Broccoli (house-001)" in result.output
+    assert (
+        "tue: alternates Tacos (Refried Beans) (house-002) / Tacos (Meat) (house-003)"
+        in result.output
+    )
+    assert "wed: menu (the planner chooses)" in result.output
+    result = runner.invoke(app, ["plan", "base", "sun", "core-044"])
+    assert "sun: Jalapeno-Orange Pork Tenderloin with Snap Peas (core-044)" in result.output
+    result = runner.invoke(app, ["plan", "base", "sun", "menu"])
+    assert "sun: menu" in result.output
+    assert runner.invoke(app, ["plan", "base", "sun", "core-999"]).exit_code == 1
     assert runner.invoke(app, ["prefs", "set", "max_spice", "9"]).exit_code == 1
 
     start = ["--start", "2026-10-04"]
@@ -138,7 +152,8 @@ def test_planning_workflow_end_to_end(tmp_path, monkeypatch, catalog):
     assert result.output == (GOLDEN_WEEK / "prep.md").read_text() + "\n"
 
     result = runner.invoke(app, ["plan", "show", *start, "--day", "2026-10-09"])
-    assert "Start the slow cooker" in result.output
+    assert "Pizza Night (order in)" in result.output
+    assert "Order in: nothing to cook" in result.output
 
     result = runner.invoke(app, ["plan", "swap", "2026-10-06", "dinner", "core-048", *start])
     assert result.exit_code == 0, result.output

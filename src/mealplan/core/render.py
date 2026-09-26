@@ -7,6 +7,7 @@ Output is deterministic and pinned by golden files.
 from datetime import date, timedelta
 
 from mealplan.core import recipe_facts
+from mealplan.core.base_week import ORDER_IN_TAG
 from mealplan.core.planner import PlannedMeal, WeekPlanResult
 from mealplan.core.prep import PrepPlan
 from mealplan.core.recipe_facts import Dish
@@ -79,33 +80,7 @@ def day_card(
 
     dinner = meals.get((day, Meal.DINNER))
     if dinner is not None and dinner.ref:
-        dish = dishes.get(dinner.ref)
-        lines.append(f"- Dinner: {dinner.title}")
-        feeds = meals.get((tomorrow, Meal.LUNCH))
-        leftover = feeds is not None and feeds.leftover_of == day
-        if dinner.ref in result.make_ahead and day != prep.day:
-            lines.append("  - Made on prep day: reheat")
-        elif leftover and feeds is not None:
-            tonight = format_qty(dinner.servings - feeds.servings)
-            lines.append(
-                f"  - Cook {format_qty(dinner.servings)} servings: {tonight} tonight, "
-                f"{format_qty(feeds.servings)} for lunch"
-            )
-        else:
-            lines.append(f"  - Cook {format_qty(dinner.servings)} servings")
-        minutes = recipe_facts.active_minutes(dish) if dish else None
-        if dinner.ref not in result.make_ahead or day == prep.day:
-            lines.append(
-                f"  - {minutes} min hands-on"
-                if minutes is not None
-                else "  - Hands-on time not recorded"
-            )
-        if dish is not None and "slow cooker" in recipe_facts.equipment(dish):
-            hours = recipe_facts.passive_minutes(dish) / 60
-            if hours >= 2:
-                lines.append(f"  - Start the slow cooker about {format_qty(hours)} h before dinner")
-        if leftover and feeds is not None:
-            lines.append(f"  - Set aside {format_qty(feeds.servings)} portions for tomorrow")
+        lines += _dinner_lines(dinner, meals.get((tomorrow, Meal.LUNCH)), result, prep, dishes)
     elif dinner is not None:
         lines.append("- Dinner: open")
 
@@ -118,6 +93,49 @@ def day_card(
     if lunch is not None:
         what = f"leftover {lunch.title}" if lunch.leftover_of is not None else lunch.title
         lines.append(f"- Pack for {tomorrow:%a} lunch ({format_qty(lunch.servings)}): {what}")
+    return lines
+
+
+def _dinner_lines(
+    dinner: PlannedMeal,
+    tomorrows_lunch: PlannedMeal | None,
+    result: WeekPlanResult,
+    prep: PrepPlan,
+    dishes: dict[str, Dish],
+) -> list[str]:
+    lines = [f"- Dinner: {dinner.title}"]
+    dish = dishes.get(dinner.ref or "")
+    if dish is not None and ORDER_IN_TAG in dish.tags:
+        return [*lines, "  - Order in: nothing to cook"]
+
+    made_ahead = dinner.ref in result.make_ahead and dinner.date != prep.day
+    feeds = (
+        tomorrows_lunch if tomorrows_lunch and tomorrows_lunch.leftover_of == dinner.date else None
+    )
+    if made_ahead:
+        lines.append("  - Made on prep day: reheat")
+    elif feeds is not None:
+        tonight = format_qty(dinner.servings - feeds.servings)
+        lines.append(
+            f"  - Cook {format_qty(dinner.servings)} servings: {tonight} tonight, "
+            f"{format_qty(feeds.servings)} for lunch"
+        )
+    else:
+        lines.append(f"  - Cook {format_qty(dinner.servings)} servings")
+
+    if not made_ahead:
+        minutes = recipe_facts.active_minutes(dish) if dish else None
+        lines.append(
+            f"  - {minutes} min hands-on"
+            if minutes is not None
+            else "  - Hands-on time not recorded"
+        )
+    if dish is not None and "slow cooker" in recipe_facts.equipment(dish):
+        hours = recipe_facts.passive_minutes(dish) / 60
+        if hours >= 2:
+            lines.append(f"  - Start the slow cooker about {format_qty(hours)} h before dinner")
+    if feeds is not None:
+        lines.append(f"  - Set aside {format_qty(feeds.servings)} portions for tomorrow")
     return lines
 
 

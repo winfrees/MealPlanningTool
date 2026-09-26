@@ -61,6 +61,19 @@ The days are configurable; the rhythm is the default.
 | Daily | Cook dinner, pack lunch | Day card: tonight's steps, tomorrow's lunch assembly |
 | After meals | Rate and log leftovers | Updated favorites and inventory |
 
+### Base week (PLN-9)
+
+The household's standing dinners; every plan starts from these.
+
+| Day | Dinner |
+| --- | --- |
+| Monday | Salmon, jasmine rice, broccoli |
+| Tuesday | Tacos, alternating refried beans and meat; tomatoes, sour cream, shredded cheese, avocado, store-bought tortillas |
+| Wednesday | Menu item (planner) |
+| Thursday | Menu item (planner) |
+| Friday | Pizza, usually ordered in |
+| Saturday, Sunday | Menu item (planner) |
+
 ## 3. Architecture and data model
 
 Three layers: agentic ingest and discovery on the left, a deterministic core in the middle, and
@@ -171,6 +184,10 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
   are recorded as overrides.
 - **PLN-8** Plans draw mainly from core recipes; discovered recipes enter at a capped rate
   (default: at most one new dinner per week).
+- **PLN-9** Base week: standing dinners every plan starts from, per weekday — one recipe, or
+  several that rotate week by week. Standing meals repeat by design (no repeat-window or
+  weeknight-time check) and are not chosen for other days; a manual swap still wins. Days
+  without a standing meal are chosen by the planner.
 
 ### Inventory (INV)
 

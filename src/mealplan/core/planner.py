@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from mealplan.core import recipe_facts
+from mealplan.core.base_week import ORDER_IN_TAG, pick_rotation, rotation
 from mealplan.core.components import TEMPLATES, ComponentSpec, from_dish
 from mealplan.core.preferences import HouseholdPrefs, Weekday
 from mealplan.core.recipe_facts import Dish
@@ -98,7 +99,8 @@ class _Week:
         self.refs.add(dish.ref)
         if dish.family:
             self.families.add(dish.family)
-        self.proteins[recipe_facts.protein(dish)] += 1
+        if ORDER_IN_TAG not in dish.tags:  # a takeout night uses no protein allowance
+            self.proteins[recipe_facts.protein(dish)] += 1
         if dish.collection is Collection.DISCOVERED:
             self.discovered += 1
 
@@ -192,10 +194,32 @@ class _Planner:
             chosen[day] = (dish, True)
             week.add(dish)
 
+        # The base week's standing meals come next; they repeat by design, so the repeat
+        # window and weeknight time limit do not apply to them.
+        for day in self.days:
+            rule = self.prefs.base_week.get(Weekday.of(day))
+            if day in chosen or not rule:
+                continue
+            ref = pick_rotation(rotation(rule), self.inputs.history, self.week_start)
+            dish = self.dishes.get(ref)
+            if dish is None:
+                self.conflicts.append(
+                    f"{_label(day)}: base-week meal {ref} is not approved; "
+                    "planned from the menu instead"
+                )
+                continue
+            chosen[day] = (dish, False)
+            week.add(dish)
+
+        base_refs = {r for rule in self.prefs.base_week.values() for r in rotation(rule)}
         pool = [
             d
             for d in _family_representatives(
-                [d for d in self.inputs.dishes if d.role is MealRole.DINNER]
+                [
+                    d
+                    for d in self.inputs.dishes
+                    if d.role is MealRole.DINNER and d.ref not in base_refs
+                ]
             )
             if _allowed(d, self.prefs) and d.family not in week.families
         ]
