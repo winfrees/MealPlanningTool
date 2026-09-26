@@ -8,6 +8,7 @@ messy edges: PDF and web recipe import, fridge photos, and suggestions.
 - Spec: [`docs/requirements.md`](docs/requirements.md)
 - Decisions: [`docs/decisions/`](docs/decisions/)
 - Core recipe collection: [`data/core_recipe_manifest.json`](data/core_recipe_manifest.json)
+- Weekly routine: [`docs/user-guide.md`](docs/user-guide.md)
 
 ## Quick start
 
@@ -39,8 +40,8 @@ uv run mealctl recipes show core-024 --servings 2
 | --- | --- | --- |
 | M0 | Foundations: repo, CI, SQLite + Alembic, models, CLI | Done, except the retailer access check |
 | M1 | Core recipe library + ingredient normalizer | Code done; import and approve the real collection |
-| M2 | Planner + prep scheduler | Next |
-| M3 | Inventory + shopping list | |
+| M2 | Planner + prep scheduler | Code done; plan and cook a real week |
+| M3 | Inventory + shopping list | Next |
 | M4 | Agentic discovery (web scout, URL import) | |
 | M5 | Vision inventory | |
 | M6 | Retailer cart + MCP server + phone view | |

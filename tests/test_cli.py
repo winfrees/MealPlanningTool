@@ -106,3 +106,64 @@ def test_import_pdf_without_agent(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["import", "failures"])
     assert result.exit_code == 0, result.output
+
+
+def test_planning_workflow_end_to_end(tmp_path, monkeypatch, catalog):
+    from mealplan import db
+    from tests.conftest import REPO_ROOT
+    from tests.planning_fixtures import GOLDEN_WEEK, populate_golden
+
+    db_path = tmp_path / "plan.db"
+    monkeypatch.setenv("MEALPLAN_DB_PATH", str(db_path))
+    monkeypatch.setenv("MEALPLAN_DATA_DIR", str(REPO_ROOT / "data"))
+    assert runner.invoke(app, ["catalog", "seed"]).exit_code == 0
+    url = f"sqlite:///{db_path}"
+    with db.session_scope(db.make_engine(url)) as s:
+        populate_golden(s, catalog)
+
+    result = runner.invoke(app, ["prefs", "show"])
+    assert "dinner_servings: 4" in result.output
+
+    result = runner.invoke(app, ["plan", "base"])
+    assert result.exit_code == 0, result.output
+    assert "mon: Salmon, Jasmine Rice and Broccoli (house-001)" in result.output
+    assert (
+        "tue: alternates Tacos (Refried Beans) (house-002) / Tacos (Meat) (house-003)"
+        in result.output
+    )
+    assert "wed: menu (the planner chooses)" in result.output
+    result = runner.invoke(app, ["plan", "base", "sun", "core-044"])
+    assert "sun: Jalapeno-Orange Pork Tenderloin with Snap Peas (core-044)" in result.output
+    result = runner.invoke(app, ["plan", "base", "sun", "menu"])
+    assert "sun: menu" in result.output
+    assert runner.invoke(app, ["plan", "base", "sun", "core-999"]).exit_code == 1
+    assert runner.invoke(app, ["prefs", "set", "max_spice", "9"]).exit_code == 1
+
+    start = ["--start", "2026-10-04"]
+    result = runner.invoke(app, ["plan", "week", *start, "--seed", "7"])
+    assert result.exit_code == 0, result.output
+    assert result.output == (GOLDEN_WEEK / "plan.md").read_text() + "\n"
+
+    result = runner.invoke(app, ["plan", "cards", *start])
+    assert result.exit_code == 0, result.output
+    assert result.output == (GOLDEN_WEEK / "daycards.md").read_text() + "\n"
+
+    result = runner.invoke(app, ["prep", "show", *start])
+    assert result.output == (GOLDEN_WEEK / "prep.md").read_text() + "\n"
+
+    result = runner.invoke(app, ["plan", "show", *start, "--day", "2026-10-09"])
+    assert "Pizza Night (order in)" in result.output
+    assert "Order in: nothing to cook" in result.output
+
+    result = runner.invoke(app, ["plan", "swap", "2026-10-06", "dinner", "core-048", *start])
+    assert result.exit_code == 0, result.output
+    assert "The Best Black Bean Burgers (core-048) · 6 servings, swapped in" in result.output
+    assert result.output.count("swapped in") == 1
+
+    assert runner.invoke(app, ["plan", "lock", *start]).exit_code == 0
+    result = runner.invoke(app, ["plan", "week", *start])
+    assert result.exit_code == 1 and "locked" in result.output
+    assert runner.invoke(app, ["plan", "lock", *start, "--unlock"]).exit_code == 0
+
+    result = runner.invoke(app, ["plan", "cooked", "2026-10-04"])
+    assert result.exit_code == 0, result.output

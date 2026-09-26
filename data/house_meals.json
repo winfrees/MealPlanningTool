@@ -1,0 +1,73 @@
+{
+  "note": "The household's standing meals for the base week. Loaded once by `mealctl catalog seed` as approved core recipes; edits in the library are never overwritten.",
+  "recipes": [
+    {
+      "ref": "house-001",
+      "title": "Salmon, Jasmine Rice and Broccoli",
+      "servings": 4,
+      "tags": ["house"],
+      "ingredients": [
+        "1 1/2 lb salmon fillets",
+        "1 1/2 cups jasmine rice",
+        "1 lb broccoli florets",
+        "1 tablespoon olive oil",
+        "1 lemon",
+        "1 teaspoon kosher salt"
+      ],
+      "steps": [
+        ["Rinse and cook the jasmine rice.", 5, 15, ["stove"]],
+        ["Roast the salmon and broccoli with oil and salt at 425F.", 10, 15, ["oven"]],
+        ["Serve with lemon wedges.", 5, 0, []]
+      ]
+    },
+    {
+      "ref": "house-002",
+      "title": "Tacos (Refried Beans)",
+      "family": "tacos",
+      "servings": 4,
+      "tags": ["house"],
+      "ingredients": [
+        "2 (16-ounce) cans refried beans",
+        "12 store-bought tortillas",
+        "2 tomatoes, diced",
+        "1 cup sour cream",
+        "2 cups shredded Mexican cheese blend",
+        "2 avocados, sliced"
+      ],
+      "steps": [
+        ["Warm the refried beans.", 5, 10, ["stove"]],
+        ["Dice the tomatoes, slice the avocado, and set out the toppings.", 10, 0, []],
+        ["Warm the tortillas.", 5, 0, ["stove"]]
+      ]
+    },
+    {
+      "ref": "house-003",
+      "title": "Tacos (Meat)",
+      "family": "tacos",
+      "servings": 4,
+      "tags": ["house"],
+      "ingredients": [
+        "1 1/2 lb ground beef",
+        "2 tablespoons taco seasoning",
+        "12 store-bought tortillas",
+        "2 tomatoes, diced",
+        "1 cup sour cream",
+        "2 cups shredded Mexican cheese blend",
+        "2 avocados, sliced"
+      ],
+      "steps": [
+        ["Brown the beef with the taco seasoning.", 15, 5, ["stove"]],
+        ["Dice the tomatoes, slice the avocado, and set out the toppings.", 10, 0, []],
+        ["Warm the tortillas.", 5, 0, ["stove"]]
+      ]
+    },
+    {
+      "ref": "house-004",
+      "title": "Pizza Night (order in)",
+      "servings": 4,
+      "tags": ["house", "order-in", "no-leftovers"],
+      "ingredients": [],
+      "steps": []
+    }
+  ]
+}

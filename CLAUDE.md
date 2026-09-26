@@ -26,7 +26,10 @@ uv run mealctl manifest check
 uv run mealctl catalog seed    # load data/ingredients.csv
 uv run mealctl import pdf data/source/Recipes_12Sept26.pdf [--no-agent] [--only core-001]
 uv run mealctl review list     # then review show / approve / merge / family
+uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / cards / swap / lock
+uv run mealctl prep show       # Sunday prep checklist
 make evals                     # extractor eval; calls the real API
+UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden files, then review
 ```
 
 ## Layout
@@ -38,13 +41,18 @@ make evals                     # extractor eval; calls the real API
   (`MEALPLAN_DB_PATH=/tmp/x.db`), review the file, and run `ruff format`.
   `tests/test_db.py::test_migrations_match_models` fails if you forget.
 - `src/mealplan/core/`: `units.py`, `parser.py` (ingredient lines), `scaling.py`,
-  `normalizer.py` (catalog matching), `library.py` (drafts, copies/variants, families, ratings).
+  `normalizer.py` (catalog matching), `library.py` (drafts, copies/variants, families, ratings),
+  `preferences.py`, `recipe_facts.py`, `planner.py` (pure; ADR-0005), `components.py`,
+  `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning),
+  `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
 - `src/mealplan/retail/`: adapter protocol only, until M6.
-- `data/`: core recipe manifest; the source PDF lives in git-ignored `data/source/`.
+- `data/`: core recipe manifest, ingredient catalog, prep components; the source PDF lives in
+  git-ignored `data/source/`.
+- `tests/golden/week/`: the golden week (library fixture and expected plan, prep, day cards).
 - `docs/decisions/`: ADRs; add one per notable choice.
 
 ## Working rules
@@ -60,4 +68,6 @@ make evals                     # extractor eval; calls the real API
 - **M0 Foundations**: done except the retailer access check (ADR-0002).
 - **M1 Core recipe library + normalizer**: code done. Acceptance needs the real PDF: run the
   import, approve the collection, and check the unmatched-line rate (target: 95%+ clean).
-- Next: **M2** planner + prep scheduler (use plan mode first).
+- **M2 Planner + prep scheduler**: code done; golden week passes. Acceptance needs a real week
+  planned from the approved collection and cooked.
+- Next: **M3** inventory + shopping list.
