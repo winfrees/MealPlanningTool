@@ -21,10 +21,11 @@ from mealplan.core.normalizer import Catalog, seed_catalog
 from mealplan.core.scaling import scale_quantity
 from mealplan.core.units import format_qty
 from mealplan.ingest import review_queue
+from mealplan.ingest.pdf import BudgetExceeded, import_manifest
 from mealplan.models.enums import Collection, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.schemas import RecipeDraft
-from mealplan.models.tables import Recipe
+from mealplan.models.tables import IngestFailure, Recipe
 
 app = typer.Typer(help="Household meal planner: plans, prep sessions, and shopping lists.")
 db_app = typer.Typer(help="Database management.")
@@ -32,11 +33,13 @@ manifest_app = typer.Typer(help="Core recipe manifest.")
 catalog_app = typer.Typer(help="Ingredient catalog.")
 recipes_app = typer.Typer(help="Recipe library.")
 review_app = typer.Typer(help="Review queue for imported drafts (ING-3).")
+import_app = typer.Typer(help="Import recipes from the source PDF (ING-1).")
 app.add_typer(db_app, name="db")
 app.add_typer(manifest_app, name="manifest")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(recipes_app, name="recipes")
 app.add_typer(review_app, name="review")
+app.add_typer(import_app, name="import")
 
 console = Console()
 
@@ -282,3 +285,64 @@ def review_family(ref: str, name: str) -> None:
     with _session() as s:
         library.add_to_family(s, library.get_recipe(s, ref), name)
         console.print(f"{ref} is in family {name!r}.")
+
+
+@import_app.command("pdf")
+def import_pdf(
+    pdf: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Source PDF.")],
+    manifest: Annotated[Path | None, typer.Option(help="Recipe manifest JSON.")] = None,
+    only: Annotated[
+        list[str] | None, typer.Option("--only", help="Manifest ids to import (repeatable).")
+    ] = None,
+    agent: Annotated[
+        bool, typer.Option("--agent/--no-agent", help="Use the Claude extraction agent.")
+    ] = True,
+) -> None:
+    """Import the core collection into the review queue: web prints first, then the agent."""
+    from mealplan.agents.extractor import ClaudeExtractor
+
+    settings = get_settings()
+    manifest_data = load_manifest(manifest or settings.data_dir / "core_recipe_manifest.json")
+    extractor = None
+    if agent:
+        import anthropic
+
+        key = settings.anthropic_api_key
+        extractor = ClaudeExtractor(
+            anthropic.Anthropic(api_key=key.get_secret_value()) if key else anthropic.Anthropic()
+        )
+    with _session() as s:
+        catalog = _catalog(s)
+        try:
+            report = import_manifest(
+                s,
+                pdf,
+                manifest_data,
+                catalog,
+                extractor,
+                only=set(only) if only else None,
+                weekly_budget_usd=settings.agent_weekly_budget_usd,
+            )
+        except BudgetExceeded as e:
+            console.print(f"[yellow]{e}[/] Recipes imported so far are kept.")
+            return
+    console.print(f"Created {len(report.created)} drafts: {' '.join(report.created)}")
+    if report.skipped:
+        console.print(f"Already in the library: {len(report.skipped)}")
+    if report.needs_agent:
+        console.print(f"Need the agent (--agent): {' '.join(report.needs_agent)}")
+    if report.failed:
+        console.print(f"[red]Failed[/] (see `mealctl import failures`): {' '.join(report.failed)}")
+    console.print(f"Agent cost this run: ${report.cost_usd:.2f}")
+
+
+@import_app.command("failures")
+def import_failures() -> None:
+    """Imports that failed validation, grounding, or the API after one retry."""
+    with _session() as s:
+        table = Table()
+        for col in ("Ref", "Pages", "Stage", "Error"):
+            table.add_column(col)
+        for f in s.scalars(select(IngestFailure).order_by(IngestFailure.id)):
+            table.add_row(f.ref, f.pages, f.stage, f.error[:120])
+        console.print(table)

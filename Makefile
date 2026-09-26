@@ -15,6 +15,6 @@ test:
 
 check: lint typecheck test
 
-# Per-agent eval sets (see evals/README.md). No agents exist yet (M0).
+# Per-agent eval sets (see evals/README.md). Calls the real API.
 evals:
-	@echo "No eval sets yet; the PDF extractor's set arrives in M1."
+	uv run python evals/run_extractor.py

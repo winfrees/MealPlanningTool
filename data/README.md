@@ -4,6 +4,7 @@
 | --- | --- |
 | `core_recipe_manifest.json` | Index of the 93 core recipes in `Recipes_12Sept26.pdf`: pages, source, format, meal role, variant family, household notes, copies. Also lists the non-recipe pages. Validated by `mealctl manifest check`. |
 | `core_recipe_manifest.csv` | The same recipe rows as CSV, for spreadsheets. |
+| `ingredients.csv` | Ingredient catalog (314 staples): canonical name, aliases (`;`-separated), store section, density (g/ml), default unit, shelf life, pack size and unit, staple flag. Load with `mealctl catalog seed`. |
 
 ## Source PDF
 
@@ -11,4 +12,4 @@
 too large for git). Put it at `data/source/Recipes_12Sept26.pdf`; that directory is git-ignored.
 The M1 importer reads it from there.
 
-Later milestones add the seed ingredient catalog (~300 staples) and the store layout here.
+A later milestone adds the store layout here.

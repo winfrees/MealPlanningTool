@@ -82,3 +82,27 @@ def test_library_workflow_end_to_end(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     result = runner.invoke(app, ["recipes", "list", "--status", "approved"])
     assert "Doro Wat" in result.output
+
+
+def test_import_pdf_without_agent(tmp_path, monkeypatch):
+    import json
+
+    from tests.conftest import REPO_ROOT
+    from tests.test_pdf_import import MANIFEST, make_pdf
+
+    monkeypatch.setenv("MEALPLAN_DB_PATH", str(tmp_path / "imp.db"))
+    monkeypatch.setenv("MEALPLAN_DATA_DIR", str(REPO_ROOT / "data"))
+    pdf = make_pdf(tmp_path / "Recipes_12Sept26.pdf")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps(MANIFEST.model_dump()))
+
+    assert runner.invoke(app, ["catalog", "seed"]).exit_code == 0
+    result = runner.invoke(
+        app, ["import", "pdf", str(pdf), "--manifest", str(manifest), "--no-agent"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Created 1 drafts: core-024" in result.output
+    assert "Need the agent" in result.output and "core-049" in result.output
+
+    result = runner.invoke(app, ["import", "failures"])
+    assert result.exit_code == 0, result.output

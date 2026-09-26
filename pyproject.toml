@@ -6,9 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
+    "anthropic>=0.70",
     "pint>=0.24",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    "pymupdf>=1.24",
     "rich>=13.7",
     "sqlalchemy>=2.0.30",
     "typer>=0.12",
@@ -46,6 +48,10 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["mealplan.ingest.pdf", "tests.test_pdf_import"]
+disallow_untyped_calls = false  # pymupdf ships without type hints
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]

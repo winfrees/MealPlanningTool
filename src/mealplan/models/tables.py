@@ -290,3 +290,18 @@ class AgentCall(Base):
     outcome: Mapped[str] = mapped_column(String(50))  # ok, retry, failed
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class IngestFailure(Base):
+    """Guardrails: imports that failed validation or grounding after one retry."""
+
+    __tablename__ = "ingest_failure"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ref: Mapped[str] = mapped_column(String(40), default="")  # manifest id, if any
+    source_file: Mapped[str] = mapped_column(String(300), default="")
+    pages: Mapped[str] = mapped_column(String(100), default="")
+    stage: Mapped[str] = mapped_column(String(30))  # validation, grounding, refusal, api
+    error: Mapped[str] = mapped_column(Text)
+    raw_output: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
