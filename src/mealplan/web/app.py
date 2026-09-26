@@ -296,11 +296,16 @@ def create_app(settings: Settings, today: Callable[[], date] = date.today) -> Fa
 
     # --- week plan ---
 
+    @app.get("/api/calendar")
+    def calendar(s: S) -> dict[str, str]:
+        return {"today": today().isoformat(), "week_start": week_start(s, None).isoformat()}
+
     @app.get("/api/week")
-    def get_week(s: S, start: date | None = None) -> dict[str, Any]:
+    def get_week(s: S, start: date | None = None) -> dict[str, Any] | None:
+        """The saved week, or null when it has not been planned yet (a normal state)."""
         begin = week_start(s, start)
         if plan_store.get_week(s, begin) is None:
-            raise HTTPException(404, f"no plan for the week of {begin}")
+            return None
         return week_json(s, begin)
 
     @app.post("/api/week/plan")

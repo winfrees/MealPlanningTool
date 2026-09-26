@@ -106,7 +106,8 @@ def test_token_expiry_and_tampering():
 
 
 def test_week_plan_screen(client):
-    assert client.get("/api/week").status_code == 404
+    assert client.get("/api/calendar").json() == {"today": "2026-10-03", "week_start": "2026-10-04"}
+    assert client.get("/api/week").json() is None  # not planned yet
     week = client.post("/api/week/plan", json={"seed": 7}).json()
     assert week["week_start"] == "2026-10-04" and week["status"] == "draft"
     days = {d["date"]: d for d in week["days"]}

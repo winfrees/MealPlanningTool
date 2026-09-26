@@ -30,6 +30,8 @@ uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / card
 uv run mealctl prep show       # Sunday prep checklist
 uv run mealctl inventory add|list|expiring|staples
 uv run mealctl list show [--format md|text|pdf] [--output FILE]
+MEALPLAN_WEB_PASSWORD=... uv run mealctl serve   # web app at http://localhost:8000
+make e2e                       # browser tests (needs: uv run playwright install chromium)
 make evals                     # extractor eval; calls the real API
 UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden files, then review
 ```
@@ -53,6 +55,9 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
+- `src/mealplan/web/`: `app.py` (FastAPI JSON API; thin handlers over the core, same as the
+  CLI), `auth.py` (household password, signed cookie, CSRF header), `static/` (no-build
+  Preact + htm frontend; `vendor/README.md` lists the vendored files). ADR-0007.
 - `src/mealplan/retail/`: adapter protocol only, until M7.
 - `data/`: core recipe manifest, ingredient catalog, prep components; the source PDF lives in
   git-ignored `data/source/`.
@@ -75,5 +80,5 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
 - **M2 Planner + prep scheduler**: code done; golden week passes. Acceptance needs a real week
   planned from the approved collection and cooked.
 - **M3 Inventory + shopping list**: code done; golden week's list checked by hand and pinned.
-- **M4 Web app**: in progress on `claude/m4-web-ui`.
+- **M4 Web app**: code done; API tests and a browser test cover every screen.
 - Next: **M5** agentic discovery (use plan mode first).
