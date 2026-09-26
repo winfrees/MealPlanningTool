@@ -174,9 +174,14 @@ def merge_copy(session: Session, draft: Recipe, into: Recipe) -> Recipe:
         raise LibraryError(f"{draft.ref} is not a draft; only drafts can be merged as copies")
     if draft.id == into.id:
         raise LibraryError("cannot merge a recipe into itself")
-    for src in list(draft.sources):
-        draft.sources.remove(src)
-        into.sources.append(src)
+    # Load both collections before moving anything: a lazy load mid-move would autoflush
+    # and delete the moving source as an orphan of the draft.
+    with session.no_autoflush:
+        moving = list(draft.sources)
+        into.sources.extend([])  # loads the target's sources
+        for src in moving:
+            draft.sources.remove(src)
+            into.sources.append(src)
     session.delete(draft)
     session.flush()
     return into
