@@ -4,6 +4,7 @@ Runs the real server on a free port with the golden library and drives Chromium 
 Playwright. Marked `e2e`; skipped when no browser is installed.
 """
 
+import asyncio
 import socket
 import threading
 import time
@@ -179,3 +180,49 @@ def test_household_workflow(base_url: str, browser: object) -> None:
     unexpected = [e for e in errors if "status of 401" not in e]
     assert unexpected == [], unexpected
     assert len(errors) - len(unexpected) == 1
+
+
+@pytest.fixture(scope="module")
+def slow_search_url(tmp_path_factory: pytest.TempPathFactory, catalog: Catalog) -> Iterator[str]:
+    """A server whose unfiltered recipe list answers slowly, so it lands after a search."""
+    tmp: Path = tmp_path_factory.mktemp("race")
+    settings = Settings(db_path=tmp / "race.db", web_password=SecretStr(PASSWORD))
+    app = create_app(settings, today=lambda: date(2026, 10, 3))
+
+    @app.middleware("http")
+    async def slow_unfiltered(request, call_next):
+        if request.url.path == "/api/recipes" and request.query_params.get("q") == "":
+            await asyncio.sleep(1.5)
+        return await call_next(request)
+
+    with db.session_scope(db.make_engine(settings.db_url)) as s:
+        seed_catalog(s, catalog)
+        populate_golden(s, catalog)
+    port = free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+def test_an_older_slower_response_never_replaces_newer_results(
+    slow_search_url: str, browser: object
+) -> None:
+    """Regression (CI on PR #4): the swap picker's first, unfiltered request answered after
+    the search request and overwrote its results."""
+    page = browser.new_page(viewport=PHONE)  # type: ignore[attr-defined]
+    page.goto(slow_search_url)
+    page.get_by_label("Household password").fill(PASSWORD)
+    page.get_by_role("button", name="Log in").click()
+    page.get_by_role("button", name="Plan this week").click()
+    thursday = page.locator("section.day", has_text="Thu 08 Oct")
+    thursday.locator(".meal", has_text="Dinner").get_by_role("button", name="Swap").click()
+    thursday.get_by_label("Search recipes to swap in").fill("black bean")
+    page.wait_for_timeout(2500)  # the slow unfiltered answer has landed by now
+    playwright_api.expect(
+        thursday.get_by_role("button", name="The Best Black Bean Burgers")
+    ).to_be_visible(timeout=2000)

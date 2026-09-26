@@ -1,10 +1,10 @@
 // Shared UI helpers: Preact + htm, the API client, and small components.
 import { h, render } from "./vendor/preact.module.js";
-import { useEffect, useState, useCallback } from "./vendor/hooks.module.js";
+import { useEffect, useState, useCallback, useRef } from "./vendor/hooks.module.js";
 import htm from "./vendor/htm.module.js";
 
 export const html = htm.bind(h);
-export { render, useEffect, useState, useCallback };
+export { render, useEffect, useState, useCallback, useRef };
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -34,14 +34,18 @@ export async function api(path, { method = "GET", body } = {}) {
 }
 
 // Load data for a view; returns [data, error, reload, loading]. A null path waits.
+// Only the latest request's answer is used: when a search changes quickly, an older,
+// slower response must not overwrite a newer one.
 export function useApi(path) {
   const [state, setState] = useState({ data: null, error: null, loading: true });
+  const latest = useRef(0);
   const reload = useCallback(() => {
     if (!path) return;
+    const id = ++latest.current;
     setState((s) => ({ ...s, loading: true }));
     api(path).then(
-      (data) => setState({ data, error: null, loading: false }),
-      (error) => setState({ data: null, error, loading: false }),
+      (data) => id === latest.current && setState({ data, error: null, loading: false }),
+      (error) => id === latest.current && setState({ data: null, error, loading: false }),
     );
   }, [path]);
   useEffect(reload, [reload]);
