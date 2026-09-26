@@ -137,6 +137,8 @@ class RecipeIngredient(Base):
     unit: Mapped[str | None] = mapped_column(String(40))
     prep_note: Mapped[str] = mapped_column(String(300), default="")
     optional: Mapped[bool] = mapped_column(Boolean, default=False)
+    # How ingredient_id was found (exact, cleaned, trailing); None means unmatched.
+    match_method: Mapped[str | None] = mapped_column(String(20))
 
     recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
     ingredient: Mapped[Ingredient | None] = relationship()

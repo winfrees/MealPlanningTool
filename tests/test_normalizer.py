@@ -17,11 +17,6 @@ from mealplan.core.parser import parse_ingredient
 CATALOG_CSV = Path(__file__).resolve().parent.parent / "data" / "ingredients.csv"
 
 
-@pytest.fixture(scope="module")
-def catalog() -> Catalog:
-    return Catalog.from_csv(CATALOG_CSV)
-
-
 def test_catalog_is_seeded_with_about_300_staples(catalog):
     assert len(catalog) >= 300
 
