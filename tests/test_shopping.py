@@ -168,3 +168,24 @@ def test_inventory_in_units_that_do_not_convert_is_flagged(catalog):
     beans = line(result, "black beans")
     assert beans.to_buy == 2
     assert any("does not convert" in n for n in beans.notes)
+
+
+def test_exports(shopping, tmp_path):
+    import pymupdf
+
+    from mealplan.core.render_list import shopping_markdown, shopping_pdf, shopping_text
+
+    md = shopping_markdown(shopping)
+    assert "## Produce\n- [ ] avocado: 3\n- [ ] cilantro: as needed" in md
+    assert "- [ ] ground beef: 2 1/4 lb (3 x 1 lb) · need 3 1/4, have 1" in md
+    assert "- [ ] black beans: 2 cans (15 oz each)" in md
+    assert "## Staples (assumed on hand)\nchili powder" in md
+
+    text = shopping_text(shopping)
+    assert "PRODUCE\n[ ] avocado: 3" in text and "#" not in text
+
+    pdf = tmp_path / "list.pdf"
+    shopping_pdf(shopping, pdf)
+    with pymupdf.open(pdf) as doc:
+        body = "".join(page.get_text() for page in doc)
+    assert "ground beef: 2 1/4 lb" in body

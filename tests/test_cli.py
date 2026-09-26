@@ -167,3 +167,55 @@ def test_planning_workflow_end_to_end(tmp_path, monkeypatch, catalog):
 
     result = runner.invoke(app, ["plan", "cooked", "2026-10-04"])
     assert result.exit_code == 0, result.output
+
+
+def test_inventory_and_shopping_workflow(tmp_path, monkeypatch, catalog):
+    from mealplan import db
+    from tests.conftest import REPO_ROOT
+    from tests.planning_fixtures import populate_golden
+
+    db_path = tmp_path / "shop.db"
+    monkeypatch.setenv("MEALPLAN_DB_PATH", str(db_path))
+    monkeypatch.setenv("MEALPLAN_DATA_DIR", str(REPO_ROOT / "data"))
+    assert runner.invoke(app, ["catalog", "seed"]).exit_code == 0
+    with db.session_scope(db.make_engine(f"sqlite:///{db_path}")) as s:
+        populate_golden(s, catalog)
+    start = ["--start", "2026-10-04"]
+    assert runner.invoke(app, ["plan", "week", *start, "--seed", "7"]).exit_code == 0
+
+    result = runner.invoke(
+        app, ["inventory", "add", "ground beef", "3", "lb", "--location", "freezer"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Added #2: 3 lb (freezer, best by" in result.output  # #1 is the golden spinach
+    result = runner.invoke(app, ["inventory", "add", "unobtainium", "1"])
+    assert result.exit_code == 1 and "not in the ingredient catalog" in result.output
+
+    result = runner.invoke(app, ["inventory", "list"])
+    assert "ground beef, 3 lb" in result.output and "spinach, 5 oz" in result.output
+
+    result = runner.invoke(app, ["inventory", "staples"])
+    assert "Last checked: never (check due)" in result.output
+    result = runner.invoke(app, ["inventory", "staples", "--out", "olive oil"])
+    assert "Out: olive oil" in result.output
+
+    result = runner.invoke(app, ["list", "show", *start])
+    assert result.exit_code == 0, result.output
+    assert "## Already have\n- ground beef" in result.output
+    assert "- [ ] olive oil:" in result.output
+
+    result = runner.invoke(app, ["list", "show", *start, "--format", "text"])
+    assert "PRODUCE" in result.output
+    pdf = tmp_path / "list.pdf"
+    result = runner.invoke(app, ["list", "show", *start, "--format", "pdf", "--output", str(pdf)])
+    assert result.exit_code == 0 and pdf.read_bytes().startswith(b"%PDF")
+    assert runner.invoke(app, ["list", "show", *start, "--format", "pdf"]).exit_code != 0
+
+    result = runner.invoke(app, ["plan", "cooked", "2026-10-06"])  # tacos: 2.25 lb beef
+    assert "marked cooked" in result.output and "Not in inventory" in result.output
+    result = runner.invoke(app, ["inventory", "list"])
+    assert "ground beef, 3/4 lb" in result.output
+
+    result = runner.invoke(app, ["prep", "done", *start])
+    assert "Prep recorded." in result.output
+    assert runner.invoke(app, ["inventory", "expiring", "--days", "30"]).exit_code == 0

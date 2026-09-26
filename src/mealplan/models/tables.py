@@ -193,6 +193,8 @@ class MealSlot(Base):
     is_override: Mapped[bool] = mapped_column(Boolean, default=False)  # PLN-7 manual swaps
     cooked: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    recipe: Mapped[Recipe | None] = relationship()
+
 
 class WeekPlan(Base):
     """One planned week (PLN-1, PLN-7): the seed and status that reproduce its meal slots."""

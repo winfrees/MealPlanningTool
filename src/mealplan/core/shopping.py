@@ -92,6 +92,7 @@ class ListLine:
     ingredient: str | None = None  # catalog name; None when unmatched
     notes: tuple[str, ...] = ()
     uses: tuple[str, ...] = ()
+    amount_known: bool = True  # False when some recipe gave no amount
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,7 @@ def build_list(
             ingredient=entry.canonical_name if entry is not None else None,
             notes=tuple(notes),
             uses=tuple(sorted(a.uses)),
+            amount_known=not a.missing_qty,
         )
         if to_buy <= EPS and needed > 0 and not a.missing_qty:
             have.append(line)

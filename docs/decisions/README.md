@@ -10,3 +10,4 @@ requirement IDs it touches.
 | [0003](0003-rules-ingredient-parser.md) | Rules-based ingredient-line parser | Accepted |
 | [0004](0004-pdf-extraction-agent.md) | PDF extraction agent | Accepted |
 | [0005](0005-planner-algorithm.md) | Planner algorithm | Accepted |
+| [0006](0006-shopping-list-units-and-packs.md) | Shopping list units, netting, and packs | Accepted |

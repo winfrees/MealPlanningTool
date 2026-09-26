@@ -29,6 +29,7 @@ from mealplan.models.tables import Ingredient, InventoryItem, MealSlot
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_WEEK = ROOT / "tests" / "golden" / "week"
+GOLDEN_ON_HAND = {"spinach": [(5.0, "oz")]}  # matches populate_golden's inventory
 
 
 def load_golden() -> dict[str, Any]:

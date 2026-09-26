@@ -15,23 +15,25 @@ from sqlalchemy.orm import Session
 
 from mealplan import __version__, db
 from mealplan.config import get_settings
-from mealplan.core import library, plan_store
+from mealplan.core import inventory, kitchen, library, plan_store
 from mealplan.core.base_week import rotation, seed_house_meals
 from mealplan.core.components import load_components_csv, seed_components
+from mealplan.core.inventory import InventoryError, Shortfall
 from mealplan.core.library import LibraryError
 from mealplan.core.normalizer import Catalog, seed_catalog
 from mealplan.core.plan_store import PlanError
 from mealplan.core.preferences import PrefsError, Weekday, load_prefs, set_pref
 from mealplan.core.prep import build_prep
 from mealplan.core.render import day_card, day_cards_markdown, plan_markdown, prep_markdown
+from mealplan.core.render_list import shopping_markdown, shopping_pdf, shopping_text
 from mealplan.core.scaling import scale_quantity
 from mealplan.core.units import format_qty
 from mealplan.ingest import review_queue
 from mealplan.ingest.pdf import BudgetExceeded, import_manifest
-from mealplan.models.enums import Collection, Meal, RecipeStatus
+from mealplan.models.enums import Collection, Location, Meal, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.schemas import RecipeDraft
-from mealplan.models.tables import IngestFailure, Recipe
+from mealplan.models.tables import IngestFailure, Ingredient, Recipe
 
 app = typer.Typer(help="Household meal planner: plans, prep sessions, and shopping lists.")
 db_app = typer.Typer(help="Database management.")
@@ -43,6 +45,8 @@ import_app = typer.Typer(help="Import recipes from the source PDF (ING-1).")
 prefs_app = typer.Typer(help="Household planning rules (PLN-1).")
 plan_app = typer.Typer(help="Weekly plan: dinners, lunches, day cards (PLN-1..8).")
 prep_app = typer.Typer(help="Sunday prep checklist (PLN-5).")
+inventory_app = typer.Typer(help="Kitchen inventory: fridge, freezer, pantry (INV-1..5).")
+list_app = typer.Typer(help="Shopping list for a planned week (SHP-1..5).")
 app.add_typer(db_app, name="db")
 app.add_typer(manifest_app, name="manifest")
 app.add_typer(catalog_app, name="catalog")
@@ -52,6 +56,8 @@ app.add_typer(import_app, name="import")
 app.add_typer(prefs_app, name="prefs")
 app.add_typer(plan_app, name="plan")
 app.add_typer(prep_app, name="prep")
+app.add_typer(inventory_app, name="inventory")
+app.add_typer(list_app, name="list")
 
 console = Console()
 
@@ -63,7 +69,7 @@ def _session() -> Iterator[Session]:
     try:
         with db.session_scope(db.make_engine(settings.db_url)) as s:
             yield s
-    except (LibraryError, PlanError, PrefsError) as e:
+    except (LibraryError, PlanError, PrefsError, InventoryError) as e:
         console.print(f"[red]{e}[/]", markup=True, highlight=False)
         raise typer.Exit(1) from None
 
@@ -466,10 +472,11 @@ def plan_cooked(
     day: Annotated[datetime, typer.Argument(formats=["%Y-%m-%d"])],
     meal: Meal = Meal.DINNER,
 ) -> None:
-    """Mark a meal as cooked."""
+    """Mark a meal as cooked and take what it used out of inventory (INV-3)."""
     with _session() as s:
-        plan_store.mark_cooked(s, day.date(), meal)
+        short = kitchen.cook(s, day.date(), meal)
         typer.echo(f"{meal} on {day.date()} marked cooked.")
+        _report_shortfalls(short)
 
 
 @prep_app.command("show")
@@ -512,3 +519,130 @@ def plan_base(
             names = " / ".join(f"{titles.get(r, r)} ({r})" for r in rotation(rule))
             label = "alternates " if len(rotation(rule)) > 1 else ""
             typer.echo(f"{weekday.value}: {label}{names}")
+
+
+def _report_shortfalls(short: list[Shortfall]) -> None:
+    if short:
+        missing = ", ".join(f"{s.name} ({format_qty(s.qty)} {s.unit})" for s in short)
+        typer.echo(f"Not in inventory (nothing deducted for these): {missing}")
+
+
+@prep_app.command("done")
+def prep_done_cmd(start: StartOption = None) -> None:
+    """Record that prep is done: take what it used out of inventory."""
+    with _session() as s:
+        short = kitchen.prep_done(s, _week_start(s, _as_date(start)))
+        typer.echo("Prep recorded.")
+        _report_shortfalls(short)
+
+
+DateOption = Annotated[datetime | None, typer.Option(formats=["%Y-%m-%d"])]
+
+
+@inventory_app.command("add")
+def inventory_add(
+    name: str,
+    qty: float,
+    unit: Annotated[
+        str | None, typer.Argument(help="oz, lb, cup, can... or none for a count.")
+    ] = None,
+    location: Location = Location.FRIDGE,
+    best_by: DateOption = None,
+) -> None:
+    """Add something to the fridge, freezer, or pantry."""
+    with _session() as s:
+        item = inventory.add_item(
+            s, _catalog(s), name, qty, unit, location, date.today(), _as_date(best_by)
+        )
+        best = f", best by {item.best_by}" if item.best_by else ""
+        typer.echo(f"Added #{item.id}: {format_qty(item.qty)} {item.unit} ({location}{best}).")
+
+
+@inventory_app.command("list")
+def inventory_list() -> None:
+    """Everything on hand, by location, soonest best-by first."""
+    with _session() as s:
+        names = {i.id: i.canonical_name for i in s.scalars(select(Ingredient))}
+        rows = inventory.items(s)
+        if not rows:
+            typer.echo("Inventory is empty.")
+        for item in rows:
+            best = f" · best by {item.best_by}" if item.best_by else ""
+            typer.echo(
+                f"#{item.id} {item.location}: {names[item.ingredient_id]}, "
+                f"{format_qty(item.qty)} {item.unit}{best}"
+            )
+
+
+@inventory_app.command("set")
+def inventory_set(item_id: int, qty: float) -> None:
+    """Change an item's quantity (0 removes it)."""
+    with _session() as s:
+        inventory.set_qty(s, item_id, qty)
+        typer.echo(f"#{item_id} updated.")
+
+
+@inventory_app.command("remove")
+def inventory_remove(item_id: int) -> None:
+    """Remove an item."""
+    with _session() as s:
+        inventory.remove_item(s, item_id)
+        typer.echo(f"#{item_id} removed.")
+
+
+@inventory_app.command("expiring")
+def inventory_expiring(days: int = inventory.EXPIRING_DAYS) -> None:
+    """Use-first list: items at or near their best-by date (INV-5)."""
+    with _session() as s:
+        names = {i.id: i.canonical_name for i in s.scalars(select(Ingredient))}
+        rows = inventory.expiring(s, date.today(), days)
+        if not rows:
+            typer.echo("Nothing expiring soon.")
+        for item in rows:
+            typer.echo(f"{item.best_by}: {names[item.ingredient_id]} ({item.location})")
+
+
+@inventory_app.command("staples")
+def inventory_staples(
+    out: Annotated[
+        str | None, typer.Option(help="Record a check: staples that are out, comma-separated.")
+    ] = None,
+    ok: Annotated[bool, typer.Option("--ok", help="Record a check: nothing is out.")] = False,
+) -> None:
+    """Staples are assumed on hand; check them now and then (INV-4)."""
+    with _session() as s:
+        today = date.today()
+        if out is not None or ok:
+            names = [n.strip() for n in (out or "").split(",") if n.strip()]
+            status = inventory.check_staples(s, _catalog(s), today, names)
+        else:
+            status = inventory.staple_status(s, today)
+        typer.echo(f"Staples ({len(status.staples)}): {', '.join(status.staples)}")
+        typer.echo(f"Out: {', '.join(status.out) or 'none'}")
+        checked = status.last_checked.isoformat() if status.last_checked else "never"
+        typer.echo(f"Last checked: {checked}" + (" (check due)" if status.check_due else ""))
+
+
+@list_app.command("show")
+def list_show(
+    start: StartOption = None,
+    fmt: Annotated[str, typer.Option("--format", help="md, text, or pdf.")] = "md",
+    output: Annotated[Path | None, typer.Option(help="Write to a file (required for pdf).")] = None,
+) -> None:
+    """The week's shopping list, net of inventory, in store order."""
+    if fmt not in ("md", "text", "pdf"):
+        raise typer.BadParameter("format must be md, text, or pdf")
+    if fmt == "pdf" and output is None:
+        raise typer.BadParameter("pdf needs --output FILE")
+    with _session() as s:
+        result = kitchen.shopping_list(s, _week_start(s, _as_date(start)), date.today())
+    if fmt == "pdf" and output is not None:
+        shopping_pdf(result, output)
+        typer.echo(f"Wrote {output}")
+        return
+    text = shopping_markdown(result) if fmt == "md" else shopping_text(result)
+    if output is not None:
+        output.write_text(text, encoding="utf-8")
+        typer.echo(f"Wrote {output}")
+    else:
+        typer.echo(text)
