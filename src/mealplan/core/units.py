@@ -61,6 +61,7 @@ UNITS: dict[str, tuple[Dimension, str | None]] = {
     "cube": (Dimension.COUNT, None),
     "ear": (Dimension.COUNT, None),
     "leaf": (Dimension.COUNT, None),
+    "scoop": (Dimension.COUNT, None),
 }
 
 _ALIASES: dict[str, str] = {
@@ -141,6 +142,7 @@ _ALIASES: dict[str, str] = {
     "cubes": "cube",
     "ears": "ear",
     "leaves": "leaf",
+    "scoops": "scoop",
 }
 
 
