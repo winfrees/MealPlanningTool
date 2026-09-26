@@ -1,16 +1,31 @@
 # The weekly routine
 
-Five commands, Friday to Sunday. Dates default to the coming prep day (Sunday).
+Friday to Sunday. Dates default to the coming prep day (Sunday).
 
 ```sh
 uv run mealctl plan week            # Friday: draft the week (dinners, lunches, conflicts)
 uv run mealctl plan swap 2026-10-06 dinner core-048   # change anything you don't want
 uv run mealctl plan lock            # lock it once it looks right
+uv run mealctl list show --format text   # Saturday: the shopping list, net of what you have
 uv run mealctl prep show            # Sunday: the prep checklist, in the order to start things
 uv run mealctl plan cards           # the week's day cards: tonight's dinner, tomorrow's lunch
 ```
 
-After a meal: `uv run mealctl rate core-044 5 --repeat` and `uv run mealctl plan cooked 2026-10-07`.
+After prep: `uv run mealctl prep done`. After a meal: `uv run mealctl plan cooked 2026-10-07`
+(takes what it used out of inventory) and `uv run mealctl rate core-044 5 --repeat`.
+
+## Inventory
+
+```sh
+uv run mealctl inventory add "ground beef" 2 lb --location freezer
+uv run mealctl inventory add eggs 12            # counts need no unit
+uv run mealctl inventory list                   # by location, soonest best-by first
+uv run mealctl inventory expiring               # use-first list (also steers the planner)
+uv run mealctl inventory staples --out "olive oil,cumin"   # staples check; --ok if nothing is out
+```
+
+Best-by dates default from the ingredient's shelf life (90 days in the freezer). The list can be
+saved for a phone (`--format text --output list.txt`) or printed (`--format pdf --output list.pdf`).
 
 Every week starts from the base week: Monday salmon, Tuesday tacos (beans and meat in turn),
 Friday pizza, and planner-chosen dinners on the other days. See or change it with
@@ -23,4 +38,3 @@ Household rules live in `mealctl prefs show`; change one with, for example,
 Tag a recipe `mild` if the spice estimate is wrong, `very-spicy` to exclude it,
 `weeknight-friendly` if its time is unknown but quick, and `no-leftovers` if it does not reheat.
 
-Shopping lists arrive with M3.

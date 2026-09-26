@@ -47,6 +47,13 @@ class PrepPlan:
     conflicts: tuple[str, ...] = ()
 
 
+def batch_servings(spec: ComponentSpec, dish: Dish, needed: float) -> float:
+    """Freezable recipe batches cook the whole recipe; others are scaled to what is eaten."""
+    if spec.freezer_ok:
+        return max(dish.servings or needed, needed)
+    return needed
+
+
 def schedule(tasks: list[PrepTask]) -> tuple[tuple[ScheduledTask, ...], int]:
     """Order tasks on one cook and limited equipment. Returns (tasks by start, makespan)."""
     order = sorted(tasks, key=lambda t: (-t.passive, -(t.active + t.passive), t.name))
@@ -116,9 +123,7 @@ def build_prep(result: WeekPlanResult, dishes: dict[str, Dish]) -> PrepPlan:
             continue
         dish = dishes.get(spec.recipe_ref) if spec.recipe_ref else None
         if dish is not None:
-            # Freezable batches cook the whole recipe; others are scaled to what is eaten.
-            full = max(dish.servings or use.servings, use.servings)
-            batch = full if spec.freezer_ok else use.servings
+            batch = batch_servings(spec, dish, use.servings)
             extra = batch - use.servings
             note = f"freeze {format_qty(extra)} extra servings" if extra and spec.freezer_ok else ""
             name = f"{spec.name} ({format_qty(batch)} servings)"

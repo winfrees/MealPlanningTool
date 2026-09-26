@@ -26,6 +26,8 @@ class DishIngredient:
     name: str  # catalog canonical name, or the raw line when unmatched
     qty: float | None = None
     unit: str | None = None
+    optional: bool = False
+    matched: bool = True  # False when `name` is a raw line the catalog did not match
 
 
 @dataclass(frozen=True)

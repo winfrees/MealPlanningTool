@@ -28,6 +28,8 @@ uv run mealctl import pdf data/source/Recipes_12Sept26.pdf [--no-agent] [--only 
 uv run mealctl review list     # then review show / approve / merge / family
 uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / cards / swap / lock
 uv run mealctl prep show       # Sunday prep checklist
+uv run mealctl inventory add|list|expiring|staples
+uv run mealctl list show [--format md|text|pdf] [--output FILE]
 make evals                     # extractor eval; calls the real API
 UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden files, then review
 ```
@@ -44,7 +46,9 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   `normalizer.py` (catalog matching), `library.py` (drafts, copies/variants, families, ratings),
   `preferences.py`, `recipe_facts.py`, `planner.py` (pure; ADR-0005), `components.py`,
   `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning),
-  `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`).
+  `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`), `inventory.py`,
+  `shopping.py` (pure list engine; ADR-0006), `render_list.py` (md/text/pdf), `kitchen.py`
+  (DB side of lists, cooking and prep deductions).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
@@ -70,4 +74,5 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   import, approve the collection, and check the unmatched-line rate (target: 95%+ clean).
 - **M2 Planner + prep scheduler**: code done; golden week passes. Acceptance needs a real week
   planned from the approved collection and cooked.
-- Next: **M3** inventory + shopping list.
+- **M3 Inventory + shopping list**: code done; golden week's list checked by hand and pinned.
+- Next: **M4** agentic discovery (use plan mode first).

@@ -193,6 +193,8 @@ class MealSlot(Base):
     is_override: Mapped[bool] = mapped_column(Boolean, default=False)  # PLN-7 manual swaps
     cooked: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    recipe: Mapped[Recipe | None] = relationship()
+
 
 class WeekPlan(Base):
     """One planned week (PLN-1, PLN-7): the seed and status that reproduce its meal slots."""
@@ -251,12 +253,17 @@ class ShoppingLine(Base):
     shopping_list_id: Mapped[int] = mapped_column(
         ForeignKey("shopping_list.id", ondelete="CASCADE")
     )
-    ingredient_id: Mapped[int] = mapped_column(ForeignKey("ingredient.id"))
+    # Null for lines the normalizer could not match: they stay on the list, flagged.
+    ingredient_id: Mapped[int | None] = mapped_column(ForeignKey("ingredient.id"))
+    name: Mapped[str] = mapped_column(String(300), default="")
     unit: Mapped[str] = mapped_column(String(40))
     qty_needed: Mapped[float] = mapped_column(Float)
     qty_on_hand: Mapped[float] = mapped_column(Float, default=0.0)
     qty_to_buy: Mapped[float] = mapped_column(Float)
     pack_size: Mapped[float | None] = mapped_column(Float)
+    pack_unit: Mapped[str | None] = mapped_column(String(40))
+    packs: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str] = mapped_column(Text, default="")
     section: Mapped[str] = mapped_column(String(100), default="other")
     retailer_sku: Mapped[str | None] = mapped_column(String(100))
 

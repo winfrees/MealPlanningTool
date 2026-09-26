@@ -17,8 +17,16 @@ from mealplan.core.preferences import HouseholdPrefs
 from mealplan.core.prep import build_prep
 from mealplan.core.recipe_facts import Dish
 from mealplan.core.render import day_cards_markdown, plan_markdown, prep_markdown
+from mealplan.core.render_list import shopping_markdown
+from mealplan.core.shopping import build_list, week_needs
 from mealplan.models.enums import Collection
-from tests.planning_fixtures import GOLDEN_WEEK, golden_inputs, golden_seed, golden_start
+from tests.planning_fixtures import (
+    GOLDEN_ON_HAND,
+    GOLDEN_WEEK,
+    golden_inputs,
+    golden_seed,
+    golden_start,
+)
 
 
 @pytest.fixture(scope="module")
@@ -27,14 +35,23 @@ def rendered(catalog: Catalog) -> dict[str, str]:
     plan = plan_week(inputs, HouseholdPrefs(), golden_start(), golden_seed())
     dishes = {d.ref: d for d in inputs.dishes}
     prep = build_prep(plan, dishes)
+    shopping = build_list(
+        plan.week_start,
+        week_needs(plan, dishes),
+        catalog,
+        GOLDEN_ON_HAND,
+        set(),
+        HouseholdPrefs().store_layout,
+    )
     return {
         "plan.md": plan_markdown(plan),
         "prep.md": prep_markdown(prep),
         "daycards.md": day_cards_markdown(plan, prep, dishes),
+        "shopping.md": shopping_markdown(shopping),
     }
 
 
-@pytest.mark.parametrize("name", ["plan.md", "prep.md", "daycards.md"])
+@pytest.mark.parametrize("name", ["plan.md", "prep.md", "daycards.md", "shopping.md"])
 def test_matches_golden_file(rendered, name):
     path = GOLDEN_WEEK / name
     if os.environ.get("UPDATE_GOLDEN"):
