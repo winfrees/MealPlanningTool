@@ -53,7 +53,7 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
-- `src/mealplan/retail/`: adapter protocol only, until M6.
+- `src/mealplan/retail/`: adapter protocol only, until M7.
 - `data/`: core recipe manifest, ingredient catalog, prep components; the source PDF lives in
   git-ignored `data/source/`.
 - `tests/golden/week/`: the golden week (library fixture and expected plan, prep, day cards).
@@ -75,4 +75,5 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
 - **M2 Planner + prep scheduler**: code done; golden week passes. Acceptance needs a real week
   planned from the approved collection and cooked.
 - **M3 Inventory + shopping list**: code done; golden week's list checked by hand and pinned.
-- Next: **M4** agentic discovery (use plan mode first).
+- **M4 Web app**: in progress on `claude/m4-web-ui`.
+- Next: **M5** agentic discovery (use plan mode first).

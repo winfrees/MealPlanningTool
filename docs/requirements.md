@@ -224,8 +224,22 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
 - **UI-1** CLI first (plan, import, inventory, list, prep, rate).
 - **UI-2** MCP server exposing the same operations, so Claude can drive the system
   conversationally.
-- **UI-3** A light web or phone-friendly view for the week, day cards, and the shopping list (later
-  milestone).
+- **UI-3** A light web or phone-friendly view for the week, day cards, and the shopping list
+  (delivered by the web app, UI-4 to UI-7, in M4).
+- **UI-4** Web app for planning, searching and reviewing: a JSON API served by the local Python
+  process over the same core functions as the CLI, and a lightweight JavaScript frontend with no
+  build step (vendored Preact + htm, no CDN at runtime). Cross-platform in any modern browser,
+  desktop or phone, and ready to run on a home server later.
+- **UI-5** Screens: week plan (view, re-plan, swap, lock, mark cooked, day cards, prep
+  checklist); recipe search (filter by text, role, tag, family, rating; open, scale, rate);
+  review queue (approve, reject, merge copies, group variants); shopping list and inventory
+  (checklist, exports, add and edit items, staples check).
+- **UI-6** Access: one household password; a signed, HttpOnly, SameSite session cookie; login
+  attempts rate-limited; state-changing requests need JSON and a custom header (CSRF). Binds to
+  this computer by default; serving on the home network is an explicit option.
+- **UI-7** Same guarantees as the CLI: every write goes through the core functions (agents still
+  never write), errors are shown rather than swallowed, and pages stay readable on a phone
+  (NFR-9).
 
 ## 5. Agentic components and guardrails
 
@@ -289,7 +303,7 @@ itself is not committed (see `data/README.md`).
 | Scanned cookbook page | 1 | Vision |
 
 M1 therefore runs in two passes: 41 recipes through the deterministic path, then 52 through the
-agent path with review. The extraction agent is needed from day one, not only in M4.
+agent path with review. The extraction agent is needed from day one, not only in M5.
 
 What the collection tells the design:
 
@@ -310,9 +324,10 @@ What the collection tells the design:
 
 ## 8. Milestones and deliverables
 
-Seven milestones, each ending in something usable in the kitchen. The deterministic core ships
-first (M1–M3) so every agent later has a solid, tested target to write into. The library starts
-from the core digitized recipes in M1; recipes found by agents are added on top from M4 onward.
+Eight milestones, each ending in something usable in the kitchen. The deterministic core ships
+first (M1–M3) and gets a web interface (M4) before any agent work, so every agent later has a
+solid, tested target to write into and a screen to review its output. The library starts from
+the core digitized recipes in M1; recipes found by agents are added on top from M5 onward.
 Durations assume part-time evenings and weekends with Claude Code doing most of the typing.
 
 | # | Milestone | Deliverables | Acceptance criteria | Est. |
@@ -321,9 +336,10 @@ Durations assume part-time evenings and weekends with Claude Code doing most of 
 | M1 | Core recipe library + normalizer | Import of the core digitized recipe collection (PDF extractor + review queue), recipe CRUD, ingredient parser, unit conversion (pint), ingredient catalog seeded with ~300 staples | Whole core collection imported and approved; 95%+ of ingredient lines parse with no edits | 2 wk |
 | M2 | Planner + prep scheduler | Rule-based 7-day plan, leftover linking, lunch templates, prep sessions, day cards | Golden-week tests pass; a real week is planned and cooked from it | 2–3 wk |
 | M3 | Inventory + shopping list | Manual inventory, cooked/consumed deductions, aggregated list net of inventory, section grouping, exports | List for a golden week matches hand-computed list exactly | 2 wk |
-| M4 | Agentic discovery | Web recipe scout, JSON-LD URL import, discovered-recipe queue, promotion to core, eval sets | Scout suggestions respect all dislikes and skip near-duplicates of core; 20 URLs import with no agent | 2–3 wk |
-| M5 | Vision inventory | Photo-to-delta agent, confidence thresholds, confirm flow | On 10 test photos, recall 80%+ for clearly visible items; zero unconfirmed writes | 2 wk |
-| M6 | Retailer + interfaces | Retailer adapter (first choice from M0), SKU memory, MCP server, phone-friendly view | A real week's list goes to a cart with under 10 manual fixes; week two under 3 | 2–3 wk |
+| M4 | Web app | JSON API over the core with household password (UI-4, UI-6); Preact + htm frontend with week plan, recipe search, review queue, shopping list and inventory screens (UI-5); `mealctl serve` | Every screen works on desktop and phone; a browser test covers plan, swap, list, inventory and review end to end; nothing is reachable without the password | 1–2 wk |
+| M5 | Agentic discovery | Web recipe scout, JSON-LD URL import, discovered-recipe queue, promotion to core, eval sets | Scout suggestions respect all dislikes and skip near-duplicates of core; 20 URLs import with no agent | 2–3 wk |
+| M6 | Vision inventory | Photo-to-delta agent, confidence thresholds, confirm flow | On 10 test photos, recall 80%+ for clearly visible items; zero unconfirmed writes | 2 wk |
+| M7 | Retailer + MCP | Retailer adapter (first choice from M0), SKU memory, MCP server | A real week's list goes to a cart with under 10 manual fixes; week two under 3 | 2–3 wk |
 
 ### Cross-cutting deliverables
 
@@ -350,6 +366,8 @@ Durations assume part-time evenings and weekends with Claude Code doing most of 
 | CLI | Typer + Rich | Readable tables in the terminal |
 | Agents | Anthropic SDK tool use or Claude Agent SDK | Structured outputs, vision |
 | MCP | Python MCP SDK | Lets Claude drive the system |
+| Web API | FastAPI + uvicorn | Same Pydantic types as the core; one local process |
+| Web frontend | Preact + htm, vendored ES modules, no build step | Tiny, no Node needed to run or host |
 | Tests | pytest, hypothesis, golden files | Determinism is testable |
 
 ### Repo layout
@@ -365,6 +383,7 @@ src/mealplan/
   agents/        # extractor.py, scout.py, vision.py, advisor.py, prompts/
   retail/        # base.py, kroger.py, instacart.py
   migrations/    # Alembic
+  web/           # app.py (JSON API, auth), static/ (Preact + htm frontend)
   cli.py
   mcp_server.py
 tests/  tests/golden/
@@ -382,7 +401,7 @@ data/            # core recipe manifest, seed ingredient catalog, store layout
 4. Keep agents behind interfaces in `agents/` so the core can be tested with fakes and no API calls.
 5. Record each notable choice as a one-page ADR (for example ADR-001 planner algorithm, ADR-002
    retailer choice).
-6. Use plan mode at the start of M2 and M4; those are the two milestones with the most design
+6. Use plan mode at the start of M2 and M5; those are the two milestones with the most design
    surface.
 
 ## 10. Open questions and risks
@@ -391,20 +410,21 @@ data/            # core recipe manifest, seed ingredient catalog, store layout
 
 - ~~Household size and servings per meal; does everyone eat the same lunch?~~ — answered:
   dinner for 4; two people pack the same lunch Monday to Friday.
-- Which grocery retailers do you actually use? This decides the M6 adapter.
+- Which grocery retailers do you actually use? This decides the M7 adapter.
 - ~~Prep sessions per week~~ — decided: a single session on Sundays.
 - ~~Dietary rules, allergies, and hard dislikes to encode in `Preference`.~~ — answered: no
   very spicy food; weeknight dinners at most 45 minutes hands-on (`mealctl prefs`).
 - ~~Core collection~~ — answered: `Recipes_12Sept26.pdf`, 93 recipes, mixed text and image pages
   (see section 7).
-- Primary interface after the CLI: phone web view, or mostly conversational through MCP?
+- ~~Primary interface after the CLI: phone web view, or mostly conversational through MCP?~~ —
+  answered: a web app (M4), password-protected, able to move to a home server later.
 
 ### Risks
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Ingredient normalization is harder than it looks ("1 can tomatoes", "a handful of basil") | Wrong lists | Catalog with aliases and pack sizes; flag unknowns for review, never guess silently |
-| Retailer API access or terms change | M6 blocked | Adapter interface; Instacart link or plain export as fallback |
+| Retailer API access or terms change | M7 blocked | Adapter interface; Instacart link or plain export as fallback |
 | Vision misses items in cluttered fridges | Inventory drift | Per-shelf photos, confirm step, and consumption tracking reduce reliance on photos |
 | Web recipe sites block scraping or lack structure | Scout quality drops | Prefer structured-data sites; manual paste import as fallback |
 | Plan feels rigid in real life | Low adoption | One-tap swaps, "skip tonight" that re-flows leftovers, ratings that learn |

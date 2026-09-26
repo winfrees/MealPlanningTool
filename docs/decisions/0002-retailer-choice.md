@@ -32,4 +32,4 @@ and Markdown list export (SHP-5) is the fallback for either.
 ## Consequences
 
 The `RetailerAdapter` protocol (`src/mealplan/retail/base.py`) is written now, so the choice does
-not block M1–M5.
+not block M1–M6.
