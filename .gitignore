@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets (NFR-6)
+.env
+
+# Local household data (NFR-5): database, backups, source PDFs, photos
+*.db
+*.db-journal
+backups/
+data/source/
+data/photos/
