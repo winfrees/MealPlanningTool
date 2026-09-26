@@ -1,0 +1,8 @@
+name,kind,keeps_days,freezer_ok,active_minutes,passive_minutes,equipment,per_serving
+washed salad greens,salad-base,5,no,10,0,,mixed greens:1.5:cup
+vinaigrette,dressing,7,no,5,0,,olive oil:1:tbsp;red wine vinegar:0.5:tbsp;dijon mustard:0.25:tsp
+cooked quinoa,grain,5,yes,5,20,stove,quinoa:0.25:cup
+roast chicken thighs,protein,4,yes,10,35,oven,chicken thigh:0.25:lb;olive oil:0.5:tsp
+roasted vegetables,veg,5,no,15,30,oven,bell pepper:0.5:;zucchini:0.5:;red onion:0.25:;olive oil:1:tsp
+hard-boiled eggs,protein,7,no,5,15,stove,egg:2:
+chopped vegetables,veg,4,no,15,0,,cucumber:0.25:;carrot:0.5:;bell pepper:0.25:
