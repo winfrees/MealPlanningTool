@@ -50,6 +50,29 @@ class HouseholdPrefs(BaseModel):
     max_leftover_lunches: int = Field(default=3, ge=0)
     leftover_exclude_proteins: list[str] = Field(default_factory=lambda: ["fish", "shellfish"])
     repeat_window_days: int = Field(default=14, ge=0)
+    # Store sections in walking order for the shopping list (SHP-4); others go last.
+    store_layout: list[str] = Field(
+        default_factory=lambda: [
+            "produce",
+            "bakery",
+            "deli",
+            "meat",
+            "seafood",
+            "dairy",
+            "refrigerated",
+            "frozen",
+            "canned",
+            "grains",
+            "international",
+            "baking",
+            "spices",
+            "oils",
+            "condiments",
+            "nuts",
+            "beverages",
+            "pantry",
+        ]
+    )
     # Standing dinners every week starts from: weekday -> recipe ref, or refs separated by
     # "|" to rotate week by week. Days not listed are chosen by the planner.
     base_week: dict[Weekday, str] = Field(

@@ -49,7 +49,9 @@ def dish_from_json(raw: dict[str, Any], catalog: Catalog) -> Dish:
         parsed = parse_ingredient(line)
         match = catalog.match(parsed.name)
         name = match.entry.canonical_name if match else parsed.name
-        ingredients.append(DishIngredient(name, parsed.qty, parsed.unit))
+        ingredients.append(
+            DishIngredient(name, parsed.qty, parsed.unit, parsed.optional, match is not None)
+        )
     return Dish(
         ref=raw["ref"],
         title=raw["title"],

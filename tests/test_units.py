@@ -58,3 +58,15 @@ def test_count_units_do_not_convert():
 )
 def test_format_qty(qty, text):
     assert format_qty(qty) == text
+
+
+def test_try_convert():
+    from mealplan.core.units import try_convert
+
+    assert try_convert(2, "cup", "tbsp") == pytest.approx(32)
+    assert try_convert(3, None, None) == 3
+    assert try_convert(3, None, "each") == 3
+    assert try_convert(1, "can", "oz") is None
+    assert try_convert(1, "cup", "g") is None
+    assert try_convert(1, "cup", "g", 0.5) == pytest.approx(118.3, abs=0.1)
+    assert try_convert(1, None, "cup") is None

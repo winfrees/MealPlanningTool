@@ -54,7 +54,11 @@ def dish_from_recipe(session: Session, recipe: Recipe) -> Dish:
         tags=frozenset(recipe.tags),
         ingredients=tuple(
             DishIngredient(
-                i.ingredient.canonical_name if i.ingredient else i.raw_text, i.qty, i.unit
+                i.ingredient.canonical_name if i.ingredient else i.raw_text,
+                i.qty,
+                i.unit,
+                optional=i.optional,
+                matched=i.ingredient is not None,
             )
             for i in recipe.ingredients
         ),

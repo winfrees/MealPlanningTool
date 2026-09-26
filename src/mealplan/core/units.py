@@ -206,3 +206,23 @@ def format_qty(qty: float) -> str:
             f = Fraction(n, d)
             return f"{whole} {f}" if whole else str(f)
     return f"{qty:.2f}".rstrip("0").rstrip(".")
+
+
+EACH = "each"  # the unit of a plain count ("3 onions")
+
+
+def try_convert(
+    qty: float, from_unit: str | None, to_unit: str | None, density_g_per_ml: float | None = None
+) -> float | None:
+    """Like `convert`, but None when the units cannot be compared. A missing unit is a
+    plain count, so it only matches another plain count."""
+    src = from_unit or EACH
+    dst = to_unit or EACH
+    if src == dst:
+        return qty
+    if EACH in (src, dst):
+        return None
+    try:
+        return convert(qty, src, dst, density_g_per_ml)
+    except ConversionError:
+        return None
