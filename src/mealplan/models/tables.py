@@ -164,12 +164,19 @@ class Component(Base):
     __tablename__ = "component"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    kind: Mapped[str] = mapped_column(String(30), default="main")  # soup, grain, protein, ...
     recipe_id: Mapped[int | None] = mapped_column(ForeignKey("recipe.id"))
     yield_qty: Mapped[float | None] = mapped_column(Float)
     yield_unit: Mapped[str | None] = mapped_column(String(40))
     storage: Mapped[Location] = mapped_column(_enum(Location), default=Location.FRIDGE)
     keeps_days: Mapped[int | None] = mapped_column(Integer)
+    freezer_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    active_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    passive_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    equipment: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Per-serving ingredients for components without a recipe: [[name, qty, unit], ...]
+    per_serving: Mapped[list[list[object]]] = mapped_column(JSON, default=list)
 
 
 class MealSlot(Base):
@@ -185,6 +192,19 @@ class MealSlot(Base):
     is_leftover_of: Mapped[int | None] = mapped_column(ForeignKey("meal_slot.id"))
     is_override: Mapped[bool] = mapped_column(Boolean, default=False)  # PLN-7 manual swaps
     cooked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class WeekPlan(Base):
+    """One planned week (PLN-1, PLN-7): the seed and status that reproduce its meal slots."""
+
+    __tablename__ = "week_plan"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, unique=True)  # the prep day
+    seed: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, locked
+    conflicts: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class PrepSession(Base):
