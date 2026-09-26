@@ -372,10 +372,12 @@ data/            # core recipe manifest, seed ingredient catalog, store layout
 
 ### Open questions
 
-- Household size and servings per meal; does everyone eat the same lunch?
+- ~~Household size and servings per meal; does everyone eat the same lunch?~~ — answered:
+  dinner for 4; two people pack the same lunch Monday to Friday.
 - Which grocery retailers do you actually use? This decides the M6 adapter.
 - ~~Prep sessions per week~~ — decided: a single session on Sundays.
-- Dietary rules, allergies, and hard dislikes to encode in `Preference`.
+- ~~Dietary rules, allergies, and hard dislikes to encode in `Preference`.~~ — answered: no
+  very spicy food; weeknight dinners at most 45 minutes hands-on (`mealctl prefs`).
 - ~~Core collection~~ — answered: `Recipes_12Sept26.pdf`, 93 recipes, mixed text and image pages
   (see section 7).
 - Primary interface after the CLI: phone web view, or mostly conversational through MCP?

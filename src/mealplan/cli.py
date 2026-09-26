@@ -3,7 +3,7 @@
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -15,14 +15,19 @@ from sqlalchemy.orm import Session
 
 from mealplan import __version__, db
 from mealplan.config import get_settings
-from mealplan.core import library
+from mealplan.core import library, plan_store
+from mealplan.core.components import load_components_csv, seed_components
 from mealplan.core.library import LibraryError
 from mealplan.core.normalizer import Catalog, seed_catalog
+from mealplan.core.plan_store import PlanError
+from mealplan.core.preferences import PrefsError, load_prefs, set_pref
+from mealplan.core.prep import build_prep
+from mealplan.core.render import day_card, day_cards_markdown, plan_markdown, prep_markdown
 from mealplan.core.scaling import scale_quantity
 from mealplan.core.units import format_qty
 from mealplan.ingest import review_queue
 from mealplan.ingest.pdf import BudgetExceeded, import_manifest
-from mealplan.models.enums import Collection, RecipeStatus
+from mealplan.models.enums import Collection, Meal, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.schemas import RecipeDraft
 from mealplan.models.tables import IngestFailure, Recipe
@@ -34,12 +39,18 @@ catalog_app = typer.Typer(help="Ingredient catalog.")
 recipes_app = typer.Typer(help="Recipe library.")
 review_app = typer.Typer(help="Review queue for imported drafts (ING-3).")
 import_app = typer.Typer(help="Import recipes from the source PDF (ING-1).")
+prefs_app = typer.Typer(help="Household planning rules (PLN-1).")
+plan_app = typer.Typer(help="Weekly plan: dinners, lunches, day cards (PLN-1..8).")
+prep_app = typer.Typer(help="Sunday prep checklist (PLN-5).")
 app.add_typer(db_app, name="db")
 app.add_typer(manifest_app, name="manifest")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(recipes_app, name="recipes")
 app.add_typer(review_app, name="review")
 app.add_typer(import_app, name="import")
+app.add_typer(prefs_app, name="prefs")
+app.add_typer(plan_app, name="plan")
+app.add_typer(prep_app, name="prep")
 
 console = Console()
 
@@ -51,8 +62,8 @@ def _session() -> Iterator[Session]:
     try:
         with db.session_scope(db.make_engine(settings.db_url)) as s:
             yield s
-    except LibraryError as e:
-        console.print(f"[red]{e}[/]")
+    except (LibraryError, PlanError, PrefsError) as e:
+        console.print(f"[red]{e}[/]", markup=True, highlight=False)
         raise typer.Exit(1) from None
 
 
@@ -116,9 +127,12 @@ def catalog_seed(
     """Load or refresh the ingredient catalog from CSV."""
     path = path or get_settings().data_dir / "ingredients.csv"
     catalog = Catalog.from_csv(path)
+    components = load_components_csv(path.parent / "components.csv")
     with _session() as s:
         added, updated = seed_catalog(s, catalog)
+        c_added, c_updated = seed_components(s, components)
     console.print(f"Catalog: {added} added, {updated} updated.")
+    console.print(f"Prep components: {c_added} added, {c_updated} updated.")
 
 
 @recipes_app.command("add")
@@ -346,3 +360,118 @@ def import_failures() -> None:
         for f in s.scalars(select(IngestFailure).order_by(IngestFailure.id)):
             table.add_row(f.ref, f.pages, f.stage, f.error[:120])
         console.print(table)
+
+
+def _week_start(s: Session, start: date | None) -> date:
+    return start or plan_store.next_prep_day(date.today(), load_prefs(s))
+
+
+StartOption = Annotated[
+    datetime | None,
+    typer.Option("--start", formats=["%Y-%m-%d"], help="Prep day that starts the week."),
+]
+
+
+def _as_date(value: datetime | None) -> date | None:
+    return value.date() if value else None
+
+
+@prefs_app.command("show")
+def prefs_show() -> None:
+    """Show the household rules the planner uses."""
+    with _session() as s:
+        for key, value in load_prefs(s).model_dump(mode="json").items():
+            typer.echo(f"{key}: {json.dumps(value)}")
+
+
+@prefs_app.command("set")
+def prefs_set(key: str, value: str) -> None:
+    """Set a rule, e.g. `prefs set dinner_servings 4` or `prefs set lunch_days mon,tue,wed`."""
+    with _session() as s:
+        prefs = set_pref(s, key, value)
+        typer.echo(f"{key}: {json.dumps(prefs.model_dump(mode='json')[key])}")
+
+
+@plan_app.command("week")
+def plan_week_cmd(
+    start: StartOption = None,
+    seed: Annotated[int | None, typer.Option(help="Seed; defaults to the stored one.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-plan a locked week.")] = False,
+) -> None:
+    """Plan (or re-plan) a week, keeping manual swaps. Same seed, same plan."""
+    with _session() as s:
+        week_start = _week_start(s, _as_date(start))
+        result = plan_store.plan_and_save(s, week_start, load_prefs(s), seed=seed, force=force)
+        typer.echo(plan_markdown(result))
+
+
+@plan_app.command("show")
+def plan_show(
+    start: StartOption = None,
+    day: Annotated[
+        datetime | None, typer.Option(formats=["%Y-%m-%d"], help="Show one day card.")
+    ] = None,
+) -> None:
+    """Show a saved week, or one day's card."""
+    with _session() as s:
+        week_start = _week_start(s, _as_date(start))
+        result = plan_store.saved_plan(s, week_start)
+        if day is None:
+            week = plan_store.get_week(s, week_start)
+            typer.echo(plan_markdown(result, week.status if week else "draft"))
+            return
+        dishes = plan_store.plan_dishes(s, result)
+        typer.echo("\n".join(day_card(day.date(), result, build_prep(result, dishes), dishes)))
+
+
+@plan_app.command("cards")
+def plan_cards(start: StartOption = None) -> None:
+    """Day cards for the whole week: tonight's dinner and tomorrow's lunch (PLN-6)."""
+    with _session() as s:
+        result = plan_store.saved_plan(s, _week_start(s, _as_date(start)))
+        dishes = plan_store.plan_dishes(s, result)
+        typer.echo(day_cards_markdown(result, build_prep(result, dishes), dishes))
+
+
+@plan_app.command("swap")
+def plan_swap(
+    day: Annotated[datetime, typer.Argument(formats=["%Y-%m-%d"])],
+    meal: Meal,
+    ref: str,
+    start: StartOption = None,
+) -> None:
+    """Swap one meal; other dinners stay, leftovers and prep follow (PLN-7)."""
+    with _session() as s:
+        week_start = _week_start(s, _as_date(start))
+        result = plan_store.swap(s, week_start, day.date(), meal, ref, load_prefs(s))
+        typer.echo(plan_markdown(result))
+
+
+@plan_app.command("lock")
+def plan_lock(
+    start: StartOption = None,
+    unlock: Annotated[bool, typer.Option("--unlock", help="Unlock instead.")] = False,
+) -> None:
+    """Lock the week once it is final (the Friday step); unlock to change it."""
+    with _session() as s:
+        week = plan_store.set_locked(s, _week_start(s, _as_date(start)), not unlock)
+        typer.echo(f"Week of {week.week_start} is {week.status}.")
+
+
+@plan_app.command("cooked")
+def plan_cooked(
+    day: Annotated[datetime, typer.Argument(formats=["%Y-%m-%d"])],
+    meal: Meal = Meal.DINNER,
+) -> None:
+    """Mark a meal as cooked."""
+    with _session() as s:
+        plan_store.mark_cooked(s, day.date(), meal)
+        typer.echo(f"{meal} on {day.date()} marked cooked.")
+
+
+@prep_app.command("show")
+def prep_show(start: StartOption = None) -> None:
+    """The prep-day checklist, in the order to start things."""
+    with _session() as s:
+        result = plan_store.saved_plan(s, _week_start(s, _as_date(start)))
+        typer.echo(prep_markdown(build_prep(result, plan_store.plan_dishes(s, result))))

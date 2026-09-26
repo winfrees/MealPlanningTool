@@ -19,7 +19,8 @@ from mealplan.core.planner import (
     WeekPlanResult,
     plan_week,
 )
-from mealplan.core.preferences import HouseholdPrefs
+from mealplan.core.preferences import HouseholdPrefs, Weekday
+from mealplan.core.prep import PrepPlan, build_prep
 from mealplan.core.recipe_facts import Dish, DishIngredient, StepTime
 from mealplan.models.enums import Meal, RecipeStatus
 from mealplan.models.tables import (
@@ -27,6 +28,7 @@ from mealplan.models.tables import (
     Ingredient,
     InventoryItem,
     MealSlot,
+    PrepSession,
     Recipe,
     WeekPlan,
 )
@@ -275,8 +277,10 @@ def plan_and_save(
     existing = get_week(session, week_start)
     if seed is None:
         seed = existing.seed if existing is not None else default_seed(week_start)
-    result = plan_week(load_inputs(session, week_start), prefs, week_start, seed)
+    inputs = load_inputs(session, week_start)
+    result = plan_week(inputs, prefs, week_start, seed)
     save_plan(session, result, force=force)
+    save_prep(session, build_prep(result, {d.ref: d for d in inputs.dishes}))
     return result
 
 
@@ -301,7 +305,13 @@ def swap(
     overrides.add((day, meal))
     locked = {**inputs.locked, (day, meal): ref}
     result = plan_week(replace(inputs, locked=locked), prefs, week_start, week.seed)
+    # Dinners were only pinned to hold them in place; "locked" means a manual override.
+    result = replace(
+        result,
+        meals=tuple(replace(m, locked=(m.date, m.meal) in overrides) for m in result.meals),
+    )
     save_plan(session, result, overrides=overrides)
+    save_prep(session, build_prep(result, {d.ref: d for d in inputs.dishes}))
     return result
 
 
@@ -323,3 +333,43 @@ def mark_cooked(session: Session, day: date, meal: Meal = Meal.DINNER) -> MealSl
     slot.cooked = True
     session.flush()
     return slot
+
+
+def next_prep_day(today: date, prefs: HouseholdPrefs) -> date:
+    """The prep day on or after `today`: the default start of the week to plan."""
+    target = list(Weekday).index(prefs.prep_day)
+    return today + timedelta(days=(target - today.weekday()) % 7)
+
+
+def plan_dishes(session: Session, result: WeekPlanResult) -> dict[str, Dish]:
+    """Dish snapshots for every recipe a saved week refers to."""
+    refs = {m.ref for m in result.meals if m.ref}
+    refs |= {u.spec.recipe_ref for u in result.components if u.spec.recipe_ref}
+    recipes = session.scalars(select(Recipe).where(Recipe.ref.in_(refs)))
+    return {r.ref: dish_from_recipe(session, r) for r in recipes}
+
+
+def save_prep(session: Session, prep: PrepPlan) -> PrepSession:
+    """PLN-5: the generated prep session, stored for the week (never hand-entered)."""
+    row = session.scalars(select(PrepSession).where(PrepSession.date == prep.day)).one_or_none()
+    if row is None:
+        row = PrepSession(date=prep.day)
+        session.add(row)
+    names = {s.task.component for s in prep.tasks if s.task.component}
+    row.component_ids = sorted(
+        session.scalars(select(Component.id).where(Component.name.in_(names)))
+    )
+    row.tasks = [
+        {
+            "start": s.start,
+            "name": s.task.name,
+            "active": s.task.active,
+            "passive": s.task.passive,
+            "equipment": list(s.task.equipment),
+            "note": s.task.note,
+        }
+        for s in prep.tasks
+    ]
+    row.est_minutes = prep.est_minutes
+    session.flush()
+    return row

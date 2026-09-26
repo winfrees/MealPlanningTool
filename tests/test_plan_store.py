@@ -1,21 +1,18 @@
 """Planning through the database: load, save, reload, swap, lock (PLN-7)."""
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
 
 from mealplan.core import library, plan_store
-from mealplan.core.components import load_components_csv, seed_components
 from mealplan.core.plan_store import PlanError
 from mealplan.core.planner import WeekPlanResult, plan_week
 from mealplan.core.preferences import HouseholdPrefs
-from mealplan.ingest import review_queue
-from mealplan.models.enums import Collection, InventorySource, Location, Meal, MealRole, SourceKind
-from mealplan.models.schemas import IngredientLine, RecipeDraft, SourceRef, StepDraft
-from mealplan.models.tables import Ingredient, InventoryItem, MealSlot
-from tests.planning_fixtures import ROOT, golden_inputs, golden_seed, golden_start, load_golden
+from mealplan.models.enums import Meal
+from mealplan.models.tables import MealSlot
+from tests.planning_fixtures import golden_inputs, golden_seed, golden_start, populate_golden
 
 START = golden_start()
 
@@ -26,51 +23,7 @@ def without_templates(result: WeekPlanResult) -> WeekPlanResult:
 
 @pytest.fixture
 def golden_db(session, catalog):
-    """The golden library imported through the normal library path."""
-    data = load_golden()
-    for raw in data["recipes"]:
-        draft = RecipeDraft(
-            title=raw["title"],
-            servings=raw.get("servings"),
-            meal_role=MealRole(raw["role"]),
-            tags=raw.get("tags", []),
-            collection=Collection(raw.get("collection", "core")),
-            ingredients=[IngredientLine(raw_text=line) for line in raw["ingredients"]],
-            steps=[
-                StepDraft(text=t, active_minutes=a, passive_minutes=p, equipment=e)
-                for t, a, p, e in raw["steps"]
-            ],
-            sources=[SourceRef(kind=SourceKind.MANUAL)],
-        )
-        recipe = library.create_draft(session, draft, catalog, ref=raw["ref"])
-        review_queue.approve(session, recipe)
-        if raw.get("family"):
-            library.add_to_family(session, recipe, raw["family"])
-        for score in raw.get("ratings", []):
-            library.rate(session, recipe, score, date(2026, 9, 1))
-    for ref, day in data["history"].items():
-        recipe = library.get_recipe(session, ref)
-        session.add(
-            MealSlot(
-                date=date.fromisoformat(day), meal=Meal.DINNER, recipe_id=recipe.id, servings=4
-            )
-        )
-    spinach = session.scalars(
-        select(Ingredient).where(Ingredient.canonical_name == "spinach")
-    ).one()
-    session.add(
-        InventoryItem(
-            ingredient_id=spinach.id,
-            qty=5,
-            unit="oz",
-            location=Location.FRIDGE,
-            added_on=date(2026, 10, 1),
-            best_by=date(2026, 10, 6),
-            source=InventorySource.MANUAL,
-        )
-    )
-    seed_components(session, load_components_csv(ROOT / "data" / "components.csv"))
-    session.flush()
+    populate_golden(session, catalog)
     return session
 
 
