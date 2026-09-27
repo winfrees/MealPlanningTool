@@ -22,7 +22,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
-      - run: uv run pytest -m "not e2e" --cov --cov-report=term
+      - run: uv run pytest -m "not e2e and not local" --cov --cov-report=term
       - run: uv run mealctl --help
 
   e2e:

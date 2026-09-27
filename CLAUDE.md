@@ -26,6 +26,7 @@ uv run mealctl manifest check
 uv run mealctl catalog seed    # load data/ingredients.csv
 uv run mealctl import pdf data/source/Recipes_12Sept26.pdf [--no-agent] [--only core-001]
 uv run mealctl import chat-batches data/source/Recipes_12Sept26.pdf   # then: import chat REPLY
+uv run mealctl local           # check Ollama + Docling; import pdf --engine local uses them
 uv run mealctl review list     # then review show / approve / merge / family
 uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / cards / swap / lock
 uv run mealctl prep show       # Sunday prep checklist
@@ -57,6 +58,9 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
+- `src/mealplan/agents/local_extractor.py`: Docling (OCR/layout, optional `local` extra) plus
+  an Ollama model behind the same protocol (ING-7; ADR-0008). `choose.py` picks Claude, local
+  or none (`MEALPLAN_EXTRACTOR`) for the CLI and the web app.
 - `src/mealplan/agents/credentials.py`: tidy and check the Anthropic API key (read as
   `MEALPLAN_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`; the web Setup page can save it).
 - `src/mealplan/web/`: `app.py` (FastAPI JSON API; thin handlers over the core, same as the

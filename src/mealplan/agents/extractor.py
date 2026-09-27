@@ -202,6 +202,7 @@ class ClaudeExtractor:
     ) -> None:
         self.client = client or anthropic.Anthropic()
         self.model = model
+        self.label = f"Claude ({model})"
         self.max_tokens = max_tokens
 
     def _call(self, messages: list[BetaMessageParam]) -> tuple[BetaMessage, int]:

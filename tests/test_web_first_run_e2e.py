@@ -156,3 +156,37 @@ def test_chat_import_then_edit_in_the_browser(
         card = page.locator("section.card", has_text="Grilled Bruschetta Chicken")
         expect(card).to_contain_text("No issues found")
         assert errors == []
+
+
+def test_choosing_the_local_reader(
+    tmp_path: Path,
+    data_dir: Path,  # noqa: F811
+    browser: object,
+) -> None:
+    """ING-1 locally: the Setup page checks Ollama and Docling and saves the reader choice."""
+    from mealplan.agents.local_extractor import LocalStatus
+
+    expect = playwright_api.expect
+    settings = Settings(
+        db_path=tmp_path / "local.db", data_dir=data_dir, web_password=SecretStr(PASSWORD)
+    )
+    ready = LocalStatus(True, True, True, ("qwen2.5:7b",), "Ready.")
+    app = create_app(
+        settings,
+        today=lambda: date(2026, 10, 3),
+        env_file=tmp_path / ".env",
+        local_checker=lambda: ready,
+    )
+    with serve_app(app) as url:
+        page = browser.new_page(viewport=PHONE)  # type: ignore[attr-defined]
+        page.goto(f"{url}/#/start")
+        page.get_by_label("Household password").fill(PASSWORD)
+        page.get_by_role("button", name="Log in").click()
+        reader = page.locator(".reader")
+        reader.get_by_role("button", name="Check local model").click()
+        expect(reader).to_contain_text("Import will use: local model (qwen2.5:7b)")
+        expect(reader).to_contain_text("Ready.")
+        reader.get_by_label("Reader").select_option("none")
+        expect(reader).to_contain_text("Import will use: nobody")
+        no_horizontal_scroll(page)
+    assert "MEALPLAN_EXTRACTOR=none" in (tmp_path / ".env").read_text()

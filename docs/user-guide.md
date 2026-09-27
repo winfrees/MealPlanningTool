@@ -17,6 +17,25 @@ then import again (recipes already imported are skipped). In `.env` the key can 
 `ANTHROPIC_API_KEY=...` or `MEALPLAN_ANTHROPIC_API_KEY=...`; no model name is needed. The
 demo uses its own `demo.db` and never touches your recipes.
 
+### A local model instead (Ollama + Docling)
+
+Scanned pages can also be read on this computer, free and private:
+
+1. Install Ollama from ollama.com and pull a model: `ollama pull qwen2.5:7b` (about 5 GB; any
+   model that follows JSON well works, set `MEALPLAN_OLLAMA_MODEL=...` in `.env`).
+2. Install Docling, which does the OCR and page layout: `uv sync --extra local` (large: it
+   brings PyTorch). The first import downloads its OCR and layout models once.
+3. Check it: `uv run mealctl local`, or **Check local model** on the Setup page.
+4. Choose **Local model (Ollama)** as the reader on Setup (or leave it on **Automatic**, which
+   uses the local model when no Claude key is saved), then import.
+
+Each scanned page is read by Docling, then the model writes the recipe as JSON, and every
+ingredient line is checked against what Docling read, with one retry, just like Claude. On a
+CPU expect a minute or more per recipe; the import runs in the background with progress.
+From the terminal: `mealctl import pdf data/source/Recipes_12Sept26.pdf --engine local`.
+For a vision model (for example `qwen2.5vl:7b`) set `MEALPLAN_OLLAMA_VISION=true` so the
+page images are sent too.
+
 ### No API key: import with a Claude chat
 
 Under **Use a Claude chat instead** (Get started, or **Setup** later) the recipes still missing

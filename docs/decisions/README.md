@@ -12,3 +12,4 @@ requirement IDs it touches.
 | [0005](0005-planner-algorithm.md) | Planner algorithm | Accepted |
 | [0006](0006-shopping-list-units-and-packs.md) | Shopping list units, netting, and packs | Accepted |
 | [0007](0007-web-app-architecture.md) | Web app architecture | Accepted |
+| [0008](0008-local-extraction.md) | Local extraction with Docling and Ollama | Accepted |

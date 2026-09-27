@@ -173,6 +173,11 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
 - **ING-6** A recipe editor (web) for fixing drafts before approval and approved recipes later:
   fields, ingredient lines (re-parsed and re-matched on save), steps with hands-on/waiting
   minutes and equipment. Sources, ratings and family are kept.
+- **ING-7** Local extraction: a second extractor behind the same interface reads page images
+  with Docling (OCR and layout) and structures them with a model served by Ollama, using the
+  same JSON schema, grounding check and retry as the Claude extractor. Chosen with
+  `MEALPLAN_EXTRACTOR` (auto, claude, local, none) or on the Setup page; calls are logged with
+  cost 0. Docling is an optional extra.
 
 ### Planner and prep scheduler (PLN)
 

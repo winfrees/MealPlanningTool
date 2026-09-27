@@ -6,7 +6,7 @@ Handlers are thin: each calls the same core function as the matching CLI command
 from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -17,8 +17,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mealplan import db
-from mealplan.agents import credentials
-from mealplan.agents.extractor import ClaudeExtractor, RecipeExtractor
+from mealplan.agents import choose, credentials
+from mealplan.agents.extractor import RecipeExtractor
+from mealplan.agents.local_extractor import LocalStatus, check_local
 from mealplan.config import Settings
 from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts, setup
 from mealplan.core.base_week import rotation
@@ -67,6 +68,10 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 class ApiKeyBody(BaseModel):
     key: str = Field(max_length=500)
+
+
+class ReaderBody(BaseModel):
+    choice: Literal["auto", "claude", "local", "none"]
 
 
 class ChatReplyBody(BaseModel):
@@ -228,10 +233,6 @@ def claude_client(key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=key)
 
 
-def claude_extractor(key: str) -> RecipeExtractor:
-    return ClaudeExtractor(claude_client(key))
-
-
 def check_claude_key(key: str) -> None:
     credentials.check_key(claude_client(key))
 
@@ -242,6 +243,7 @@ def create_app(
     extractor: Callable[[], RecipeExtractor | None] | None = None,
     key_checker: Callable[[str], None] = check_claude_key,
     env_file: Path = Path(".env"),
+    local_checker: Callable[[], LocalStatus] | None = None,
 ) -> FastAPI:
     if settings.web_password is None or not settings.web_password.get_secret_value():
         raise RuntimeError("set MEALPLAN_WEB_PASSWORD before starting the web app")
@@ -256,8 +258,21 @@ def create_app(
     configured = settings.anthropic_api_key
     api_key = {"value": configured.get_secret_value() if configured else None}
 
+    # Who reads the pages the free parser can't: Claude, a local model, or none (ING-1).
+    reader_choice = {"value": settings.extractor}
+
+    def local_status() -> LocalStatus:
+        if local_checker is not None:
+            return local_checker()
+        return check_local(settings.ollama_model, settings.ollama_url)
+
+    def current_engine() -> choose.Engine | None:
+        return choose.pick_engine(
+            reader_choice["value"], bool(api_key["value"]), lambda: local_status().ready
+        )
+
     def current_extractor() -> RecipeExtractor | None:
-        return claude_extractor(api_key["value"]) if api_key["value"] else None
+        return choose.make_extractor(current_engine(), settings, api_key["value"])
 
     importer = ImportJob(
         engine, manifest, extractor or current_extractor, settings.agent_weekly_budget_usd
@@ -709,7 +724,30 @@ def create_app(
             "pdf_on_disk": source_pdf.exists(),
             "import": importer.status(),
             "api_key": key_status(),
+            "reader": {"choice": reader_choice["value"], "local_model": settings.ollama_model},
         }
+
+    @app.get("/api/setup/local")
+    def setup_local() -> dict[str, Any]:
+        """Probe Ollama and Docling (a second or so), and say which reader an import would use."""
+        status = local_status()
+        return {
+            "ollama": status.ollama,
+            "model": status.model,
+            "docling": status.docling,
+            "ready": status.ready,
+            "models": list(status.models),
+            "message": status.message,
+            "local_model": settings.ollama_model,
+            "url": settings.ollama_url,
+            "engine": current_engine(),
+        }
+
+    @app.post("/api/setup/reader")
+    def set_reader(body: ReaderBody) -> dict[str, Any]:
+        launch.save_env_value(env_file, "MEALPLAN_EXTRACTOR", body.choice)
+        reader_choice["value"] = body.choice
+        return {"choice": body.choice}
 
     def key_status() -> dict[str, Any]:
         key = api_key["value"]

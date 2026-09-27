@@ -4,6 +4,7 @@ import { html, useState, useEffect, api, useApi, ErrorNote, Loading, count } fro
 function Progress({ job }) {
   if (job.state === "running") {
     return html`<p role="status">Importing recipes… ${job.done} of ${job.total}
+      ${job.reader ? html`<span class="muted small"> (scanned pages read by ${job.reader})</span>` : null}
       <progress max=${job.total} value=${job.done}></progress></p>`;
   }
   if (job.state === "idle") return null;
@@ -12,9 +13,58 @@ function Progress({ job }) {
       ${job.message ? html`<p class="warn">${job.message}</p>` : null}
       <p>Imported ${count(job.created, "recipe")}${job.skipped ? ` (${job.skipped} were already here)` : ""}.</p>
       ${job.needs_agent ? html`<p class="muted">${count(job.needs_agent, "recipe")} (scans or photos)
-        need Claude to read them. Add your Anthropic API key below, then import again;
-        recipes already imported are skipped.</p>` : null}
+        need a reader: add an Anthropic API key or set up a local model below, then import
+        again (recipes already imported are skipped), or use a Claude chat.</p>` : null}
       ${job.failed ? html`<p class="muted">${job.failed} could not be read; see <code>mealctl import failures</code>.</p>` : null}
+    </div>`;
+}
+
+// Who reads the pages the free parser can't: Claude (API key), a local model (Ollama +
+// Docling, nothing leaves this computer), or nobody. Saved in .env as MEALPLAN_EXTRACTOR.
+const READERS = [
+  ["auto", "Automatic"],
+  ["claude", "Claude (API key)"],
+  ["local", "Local model (Ollama)"],
+  ["none", "None (web prints only)"],
+];
+
+function LocalReader({ status, onChange }) {
+  const [local, setLocal] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    setBusy(true); setError(null);
+    try { setLocal(await api("/api/setup/local")); } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  const choose = async (choice) => {
+    setError(null);
+    try { await api("/api/setup/reader", { method: "POST", body: { choice } }); onChange(); check(); }
+    catch (e) { setError(e); }
+  };
+  const mark = (ok) => (ok ? "✓" : "✗");
+  return html`
+    <div class="reader">
+      <h4>Who reads scanned pages</h4>
+      <label>Reader <span class="muted small">(Automatic: Claude if a key is saved, else the local model)</span>
+        <select value=${status.reader.choice} onChange=${(e) => choose(e.target.value)}>
+          ${READERS.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
+        </select></label>
+      <div class="actions">
+        <button class="secondary small" disabled=${busy} onClick=${check}>${busy ? "Checking…" : "Check local model"}</button>
+        ${local ? html`<span class="small">Import will use: <strong>${
+          local.engine === "claude" ? "Claude" : local.engine === "local" ? `local model (${local.local_model})` : "nobody (web prints only)"}</strong></span>` : null}
+      </div>
+      ${local ? html`
+        <ul class="plain small">
+          <li>${mark(local.ollama)} Ollama running at <code>${local.url}</code></li>
+          <li>${mark(local.model)} Model <code>${local.local_model}</code> pulled</li>
+          <li>${mark(local.docling)} Docling installed</li>
+        </ul>
+        <p class=${local.ready ? "note" : "muted small"}>${local.message.replaceAll("`", "")}</p>` : html`
+        <p class="muted small">A local model runs on this computer: install Ollama (ollama.com), run
+          <code>ollama pull ${status.reader.local_model}</code>, and <code>uv sync --extra local</code>
+          for Docling. Slower than Claude, but free and private.</p>`}
+      <${ErrorNote} error=${error} />
     </div>`;
 }
 
@@ -179,6 +229,7 @@ function AddRecipes({ status, onChange }) {
     </div>
     <${Progress} job=${job} />
     <${ErrorNote} error=${error} />
+    <${LocalReader} status=${status} onChange=${onChange} />
     <${ClaudeKey} status=${status} onChange=${onChange} />
     <details class="chat-details" open=${!status.api_key.set && status.import.needs_agent > 0}>
       <summary>Use a Claude chat instead (no API key)</summary>

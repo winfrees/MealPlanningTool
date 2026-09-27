@@ -118,3 +118,5 @@ legend { font-weight: 600; padding: 0 4px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.9rem; }
 .chat-batch { border-top: 1px solid var(--line); padding: 8px 0; }
 .preview li.error { color: var(--error); }
+.reader { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
+.reader h4 { margin: 0 0 4px; }
