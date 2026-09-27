@@ -12,25 +12,30 @@ messy edges: PDF and web recipe import, fridge photos, and suggestions.
 
 ## Quick start
 
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/). Then, in this folder:
+
+```sh
+uv run mealctl serve --demo   # try it on sample recipes; log in with: demo
+uv run mealctl serve          # your own household
+```
+
+The app opens in your browser at http://localhost:8000. The first `mealctl serve` asks you to
+choose a household password, then the **Get started** page walks you through importing your
+recipe PDF, approving the recipes and planning the week. Press Ctrl+C in the terminal to stop.
+More in the [user guide](docs/user-guide.md).
+
+## Development
+
 ```sh
 uv sync
 uv run mealctl --help
-uv run mealctl db upgrade      # creates mealplan.db
-uv run mealctl manifest check  # summarizes the 93 core recipes
-uv run mealctl catalog seed    # loads the ingredient catalog
 make check                     # lint, typecheck, tests (browser tests need Chromium)
 ```
 
-## Web app
+## Importing the core collection from the terminal
 
-```sh
-echo 'MEALPLAN_WEB_PASSWORD=choose-something-long' >> .env
-uv run mealctl serve           # http://localhost:8000
-```
-
-## Importing the core collection
-
-Put `Recipes_12Sept26.pdf` in `data/source/` (git-ignored), then:
+The web app's **Get started** page does this too. From the terminal, put
+`Recipes_12Sept26.pdf` in `data/source/` (git-ignored), then:
 
 ```sh
 uv run mealctl import pdf data/source/Recipes_12Sept26.pdf --no-agent  # web prints only, free

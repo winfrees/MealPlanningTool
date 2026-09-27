@@ -3,6 +3,7 @@
 Handlers are thin: each calls the same core function as the matching CLI command.
 """
 
+import os
 from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
@@ -16,8 +17,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mealplan import db
+from mealplan.agents.extractor import RecipeExtractor
 from mealplan.config import Settings
-from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts
+from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts, setup
 from mealplan.core.base_week import rotation
 from mealplan.core.inventory import InventoryError, Shortfall
 from mealplan.core.library import LibraryError
@@ -38,8 +40,10 @@ from mealplan.core.shopping import ListLine
 from mealplan.core.units import format_qty
 from mealplan.ingest import review_queue
 from mealplan.models.enums import Location, Meal, RecipeStatus
+from mealplan.models.manifest import load_manifest
 from mealplan.models.tables import Ingredient, Rating, Recipe
 from mealplan.web import auth
+from mealplan.web.importer import ImportJob, ImportRefused, check_pdf
 
 STATIC = Path(__file__).resolve().parent / "static"
 SECURITY_HEADERS = {
@@ -52,6 +56,7 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
 # --- request bodies ---------------------------------------------------------------------------
@@ -208,12 +213,41 @@ def _shortfalls(short: list[Shortfall]) -> list[str]:
 # --- the app ----------------------------------------------------------------------------------
 
 
-def create_app(settings: Settings, today: Callable[[], date] = date.today) -> FastAPI:
+def default_extractor(settings: Settings) -> Callable[[], RecipeExtractor | None]:
+    """The Claude extractor when an API key is configured; otherwise web prints only."""
+
+    def make() -> RecipeExtractor | None:
+        key = settings.anthropic_api_key
+        if key is None and not os.environ.get("ANTHROPIC_API_KEY"):
+            return None
+        import anthropic
+
+        from mealplan.agents.extractor import ClaudeExtractor
+
+        if key is None:
+            return ClaudeExtractor(anthropic.Anthropic())
+        return ClaudeExtractor(anthropic.Anthropic(api_key=key.get_secret_value()))
+
+    return make
+
+
+def create_app(
+    settings: Settings,
+    today: Callable[[], date] = date.today,
+    extractor: Callable[[], RecipeExtractor | None] | None = None,
+) -> FastAPI:
     if settings.web_password is None or not settings.web_password.get_secret_value():
         raise RuntimeError("set MEALPLAN_WEB_PASSWORD before starting the web app")
     password = settings.web_password.get_secret_value()
     db.upgrade(settings.db_url)
     engine = db.make_engine(settings.db_url)
+    with db.session_scope(engine) as s:
+        setup.prepare(s, settings.data_dir)
+    manifest = load_manifest(settings.data_dir / "core_recipe_manifest.json")
+    source_pdf = settings.data_dir / "source" / manifest.source_pdf
+    importer = ImportJob(
+        engine, manifest, extractor or default_extractor(settings), settings.agent_weekly_budget_usd
+    )
     secret = auth.load_secret(settings.web_secret_path)
     limiter = auth.LoginLimiter()
 
@@ -244,6 +278,7 @@ def create_app(settings: Settings, today: Callable[[], date] = date.today) -> Fa
     S = Annotated[Session, Depends(session)]
 
     for error, status in (
+        (ImportRefused, 400),
         (LibraryError, 400),
         (PlanError, 400),
         (PrefsError, 400),
@@ -480,6 +515,10 @@ def create_app(settings: Settings, today: Callable[[], date] = date.today) -> Fa
             )
         return out
 
+    @app.post("/api/review/approve-ready")
+    def approve_ready(s: S) -> dict[str, list[str]]:
+        return {"approved": setup.approve_ready(s)}
+
     @app.post("/api/review/{ref}/approve")
     def approve(ref: str, s: S) -> dict[str, str]:
         review_queue.approve(s, library.get_recipe(s, ref))
@@ -604,6 +643,55 @@ def create_app(settings: Settings, today: Callable[[], date] = date.today) -> Fa
     @app.post("/api/prefs")
     def update_pref(body: PrefBody, s: S) -> dict[str, Any]:
         return set_pref(s, body.key, body.value).model_dump(mode="json")
+
+    # --- getting started (UI-8) ---
+
+    @app.get("/api/setup")
+    def setup_status(s: S) -> dict[str, Any]:
+        status = setup.library_status(s)
+        return {
+            "approved": status.approved,
+            "drafts": status.drafts,
+            "pdf_name": manifest.source_pdf,
+            "pdf_on_disk": source_pdf.exists(),
+            "import": importer.status(),
+        }
+
+    @app.post("/api/setup/import")
+    def import_saved_pdf() -> dict[str, Any]:
+        if not source_pdf.exists():
+            raise HTTPException(404, f"{source_pdf} not found; upload the PDF instead")
+        importer.start(source_pdf)
+        return importer.status()
+
+    @app.post("/api/setup/pdf")
+    async def upload_pdf(request: Request) -> dict[str, Any]:
+        """The PDF as the raw request body; saved where `mealctl import pdf` expects it."""
+        if importer.running():
+            raise ImportRefused("an import is already running")
+        source_pdf.parent.mkdir(parents=True, exist_ok=True)
+        partial = source_pdf.with_suffix(".upload")
+        size = 0
+        with partial.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    f.close()
+                    partial.unlink()
+                    raise HTTPException(413, "that file is too large for the recipe PDF")
+                f.write(chunk)
+        with partial.open("rb") as f:
+            is_pdf = f.read(5) == b"%PDF-"
+        try:
+            if not is_pdf:
+                raise ImportRefused("that file is not a PDF")
+            check_pdf(partial, manifest)
+        except ImportRefused:
+            partial.unlink()
+            raise
+        partial.replace(source_pdf)
+        importer.start(source_pdf)
+        return importer.status()
 
     # --- frontend ---
 

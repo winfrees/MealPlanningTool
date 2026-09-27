@@ -240,6 +240,12 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
 - **UI-7** Same guarantees as the CLI: every write goes through the core functions (agents still
   never write), errors are shown rather than swallowed, and pages stay readable on a phone
   (NFR-9).
+- **UI-8** First run without the terminal: one command (`mealctl serve`) creates the database,
+  loads the catalog, asks once for the household password and opens the browser. A new install
+  shows a "Get started" guide: import the collection PDF from the browser (web prints free,
+  other pages via the extractor when an API key is set, with progress), approve the drafts that
+  have no issues in one step, then plan the week. `mealctl serve --demo` runs a sample household
+  in a separate database so the app can be tried before any import.
 
 ## 5. Agentic components and guardrails
 

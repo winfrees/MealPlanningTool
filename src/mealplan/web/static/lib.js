@@ -14,12 +14,14 @@ export class ApiError extends Error {
 }
 
 // Every call sends the X-Mealplan header the server requires on writes (CSRF, UI-6).
-export async function api(path, { method = "GET", body } = {}) {
+// `body` is sent as JSON; `raw` (a File) is sent as it is.
+export async function api(path, { method = "GET", body, raw } = {}) {
+  const type = raw ? raw.type || "application/octet-stream" : body ? "application/json" : null;
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
-    headers: { "X-Mealplan": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { "X-Mealplan": "1", ...(type ? { "Content-Type": type } : {}) },
+    body: raw || (body ? JSON.stringify(body) : undefined),
   });
   const data = response.headers.get("content-type")?.includes("json")
     ? await response.json()
@@ -63,6 +65,9 @@ export function Loading() {
 
 export const fmtMinutes = (m) =>
   m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+
+// "1 recipe", "3 recipes".
+export const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 export const iso = (d) => d.toISOString().slice(0, 10);
 
