@@ -219,3 +219,10 @@ def test_inventory_and_shopping_workflow(tmp_path, monkeypatch, catalog):
     result = runner.invoke(app, ["prep", "done", *start])
     assert "Prep recorded." in result.output
     assert runner.invoke(app, ["inventory", "expiring", "--days", "30"]).exit_code == 0
+
+
+def test_serve_needs_a_password(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEALPLAN_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.delenv("MEALPLAN_WEB_PASSWORD", raising=False)
+    result = runner.invoke(app, ["serve"])
+    assert result.exit_code == 1 and "MEALPLAN_WEB_PASSWORD" in result.output

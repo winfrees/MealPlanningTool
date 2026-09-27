@@ -100,7 +100,7 @@ def shopping_text(result: ShoppingListResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-def shopping_pdf(result: ShoppingListResult, path: Path) -> None:
+def shopping_pdf_bytes(result: ShoppingListResult) -> bytes:
     """A printable list: one column, large type, as many pages as it needs."""
     text_lines = shopping_text(result).splitlines()
     doc = pymupdf.open()
@@ -109,5 +109,10 @@ def shopping_pdf(result: ShoppingListResult, path: Path) -> None:
         page = doc.new_page(width=612, height=792)  # US Letter
         chunk = "\n".join(text_lines[start : start + per_page])
         page.insert_textbox(pymupdf.Rect(54, 54, 558, 750), chunk, fontsize=12, fontname="helv")
-    doc.save(path)
+    data: bytes = doc.tobytes()
     doc.close()
+    return data
+
+
+def shopping_pdf(result: ShoppingListResult, path: Path) -> None:
+    path.write_bytes(shopping_pdf_bytes(result))

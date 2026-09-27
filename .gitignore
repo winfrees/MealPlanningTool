@@ -14,6 +14,7 @@ htmlcov/
 
 # Secrets (NFR-6)
 .env
+*.secret
 
 # Local household data (NFR-5): database, backups, source PDFs, photos
 *.db

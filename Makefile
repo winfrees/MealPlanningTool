@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test check evals
+.PHONY: install lint typecheck test e2e check evals serve
 
 install:
 	uv sync
@@ -11,9 +11,16 @@ typecheck:
 	uv run mypy
 
 test:
-	uv run pytest --cov
+	uv run pytest -m "not e2e" --cov
 
-check: lint typecheck test
+# Browser tests of the web app (needs Chromium: `uv run playwright install chromium`).
+e2e:
+	uv run pytest -m e2e
+
+serve:
+	uv run mealctl serve
+
+check: lint typecheck test e2e
 
 # Per-agent eval sets (see evals/README.md). Calls the real API.
 evals:

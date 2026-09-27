@@ -646,3 +646,26 @@ def list_show(
         typer.echo(f"Wrote {output}")
     else:
         typer.echo(text)
+
+
+@app.command()
+def serve(
+    host: Annotated[
+        str, typer.Option(help="127.0.0.1 keeps it on this computer; 0.0.0.0 opens it to the LAN.")
+    ] = "127.0.0.1",
+    port: int = 8000,
+) -> None:
+    """Run the web app (UI-4). Needs MEALPLAN_WEB_PASSWORD."""
+    import uvicorn
+
+    from mealplan.web.app import create_app
+
+    try:
+        web = create_app(get_settings())
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/]")
+        raise typer.Exit(1) from None
+    if host not in ("127.0.0.1", "localhost"):
+        console.print("Serving on the network: use a TLS reverse proxy beyond your home LAN.")
+    console.print(f"Open http://{'localhost' if host == '127.0.0.1' else host}:{port}")
+    uvicorn.run(web, host=host, port=port, log_level="warning")

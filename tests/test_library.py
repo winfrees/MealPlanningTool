@@ -197,3 +197,24 @@ def test_household_signals(notes, rating, tags):
     s = household_signals(notes)
     assert s.rating == rating
     assert s.tags == tags
+
+
+def test_merge_copy_with_objects_loaded_fresh(db_url, catalog):
+    """Regression: merging when the target's sources are not loaded yet (the web path)."""
+    from mealplan import db
+    from mealplan.core.normalizer import seed_catalog
+
+    db.upgrade(db_url)
+    engine = db.make_engine(db_url)
+    with db.session_scope(engine) as s:
+        seed_catalog(s, catalog)
+        original = library.create_draft(s, draft("Sloppy Joes", SLOPPY, [97]), catalog)
+        review_queue.approve(s, original)
+        library.create_draft(s, draft("Sloppy Joes", SLOPPY, [135]), catalog)
+    with db.session_scope(engine) as s:
+        merged = library.merge_copy(
+            s, library.get_recipe(s, "core-002"), library.get_recipe(s, "core-001")
+        )
+        assert [src.pages for src in merged.sources] == ["97", "135"]
+    with db.session_scope(engine) as s:
+        assert [src.pages for src in library.get_recipe(s, "core-001").sources] == ["97", "135"]

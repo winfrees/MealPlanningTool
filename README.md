@@ -18,7 +18,14 @@ uv run mealctl --help
 uv run mealctl db upgrade      # creates mealplan.db
 uv run mealctl manifest check  # summarizes the 93 core recipes
 uv run mealctl catalog seed    # loads the ingredient catalog
-make check                     # lint, typecheck, tests
+make check                     # lint, typecheck, tests (browser tests need Chromium)
+```
+
+## Web app
+
+```sh
+echo 'MEALPLAN_WEB_PASSWORD=choose-something-long' >> .env
+uv run mealctl serve           # http://localhost:8000
 ```
 
 ## Importing the core collection
@@ -42,9 +49,10 @@ uv run mealctl recipes show core-024 --servings 2
 | M1 | Core recipe library + ingredient normalizer | Code done; import and approve the real collection |
 | M2 | Planner + prep scheduler | Code done; plan and cook a real week |
 | M3 | Inventory + shopping list | Code done |
-| M4 | Agentic discovery (web scout, URL import) | Next |
-| M5 | Vision inventory | |
-| M6 | Retailer cart + MCP server + phone view | |
+| M4 | Web app: plan, search, review, shop (password-protected) | Code done |
+| M5 | Agentic discovery (web scout, URL import) | |
+| M6 | Vision inventory | |
+| M7 | Retailer cart + MCP server | |
 
 ## Releases
 

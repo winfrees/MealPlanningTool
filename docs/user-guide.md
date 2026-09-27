@@ -1,5 +1,21 @@
 # The weekly routine
 
+## The web app
+
+```sh
+echo 'MEALPLAN_WEB_PASSWORD=choose-something-long' >> .env   # once
+uv run mealctl serve                 # then open http://localhost:8000
+uv run mealctl serve --host 0.0.0.0  # reachable from phones on the home network
+```
+
+Everything below also works in the browser: **Week** (plan, shuffle, swap, lock, cooked, day
+cards, prep checklist), **Recipes** (search, open, scale, rate, tag), **Review** (approve,
+reject, merge copies, group variants), **Shop** (tick items off as you go; text and PDF
+downloads) and **Kitchen** (inventory and the staples check). On a home server, put it
+behind a TLS reverse proxy before exposing it beyond the home network.
+
+## From the terminal
+
 Friday to Sunday. Dates default to the coming prep day (Sunday).
 
 ```sh
