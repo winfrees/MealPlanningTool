@@ -7,8 +7,8 @@ import pytest
 from mealplan.core import library
 from mealplan.core.library import LibraryError, household_signals
 from mealplan.ingest import review_queue
-from mealplan.models.enums import Collection, RecipeStatus, SourceKind
-from mealplan.models.schemas import IngredientLine, RecipeDraft, SourceRef, StepDraft
+from mealplan.models.enums import Collection, MealRole, RecipeStatus, SourceKind
+from mealplan.models.schemas import IngredientLine, RecipeDraft, RecipeEdit, SourceRef, StepDraft
 
 PDF = "Recipes_12Sept26.pdf"
 
@@ -218,3 +218,50 @@ def test_merge_copy_with_objects_loaded_fresh(db_url, catalog):
         assert [src.pages for src in merged.sources] == ["97", "135"]
     with db.session_scope(engine) as s:
         assert [src.pages for src in library.get_recipe(s, "core-001").sources] == ["97", "135"]
+
+
+def test_edit_recipe_rematches_ingredients_and_keeps_provenance(session, catalog):
+    """UI-5: a person's edit replaces fields, ingredients and steps; sources and status stay."""
+    recipe = library.create_draft(
+        session,
+        RecipeDraft(
+            title="Chiken Soop",
+            ingredients=[IngredientLine(raw_text="1 cup unobtainium")],
+            steps=[StepDraft(text="Boil.")],
+            sources=[SourceRef(kind=SourceKind.PDF, file="Recipes_12Sept26.pdf", pages=[3])],
+        ),
+        catalog,
+    )
+    assert review_queue.issues(recipe)
+    library.edit_recipe(
+        session,
+        recipe,
+        RecipeEdit(
+            title="Chicken Soup",
+            servings=4,
+            meal_role=MealRole.SOUP,
+            tags=[" make-ahead ", ""],
+            ingredients=["2 lb chicken thighs", "  ", "1 onion, diced"],
+            steps=[
+                StepDraft(
+                    text="Simmer.", equipment=["stove"], active_minutes=10, passive_minutes=40
+                )
+            ],
+        ),
+        catalog,
+    )
+    session.expire_all()
+    recipe = library.get_recipe(session, recipe.ref)
+    assert (recipe.title, recipe.servings, recipe.meal_role) == ("Chicken Soup", 4, MealRole.SOUP)
+    assert recipe.tags == ["make-ahead"]
+    assert [(i.position, i.raw_text) for i in recipe.ingredients] == [
+        (1, "2 lb chicken thighs"),
+        (2, "1 onion, diced"),
+    ]
+    assert all(i.ingredient_id is not None for i in recipe.ingredients)
+    assert [(s.text, s.active_minutes, s.passive_minutes) for s in recipe.steps] == [
+        ("Simmer.", 10, 40)
+    ]
+    assert recipe.sources[0].file == "Recipes_12Sept26.pdf"
+    assert recipe.status is RecipeStatus.DRAFT
+    assert review_queue.issues(recipe) == []

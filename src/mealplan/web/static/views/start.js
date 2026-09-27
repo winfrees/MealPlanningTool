@@ -62,6 +62,92 @@ function ClaudeKey({ status, onChange }) {
     </div>`;
 }
 
+// Claude chat import (no API key): per batch, a small PDF and a prompt to attach in a chat at
+// claude.ai; the reply is pasted back, previewed, and imported as drafts for review.
+function Batch({ batch }) {
+  const [prompt, setPrompt] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+  const copy = async () => {
+    setError(null); setCopied(false);
+    try {
+      const text = prompt || (await api(`/api/chat-import/${batch.number}/prompt`)).prompt;
+      setPrompt(text);
+      try { await navigator.clipboard.writeText(text); setCopied(true); }
+      catch { /* not allowed here (plain http on the LAN): the text box below is shown instead */ }
+    } catch (e) { setError(e); }
+  };
+  return html`
+    <li class="chat-batch">
+      <strong>Batch ${batch.number}</strong>
+      <span class="muted small"> · ${count(batch.recipes.length, "recipe")}, ${count(batch.pages, "page")}: ${
+        batch.recipes.map((r) => r.title).join(", ")}</span>
+      <div class="actions">
+        <a class="button secondary small" href=${`/api/chat-import/${batch.number}/pdf`}
+          download=${batch.file}>Download PDF</a>
+        <button class="secondary small" onClick=${copy}>${copied ? "Prompt copied" : "Copy prompt"}</button>
+      </div>
+      ${prompt && !copied ? html`<textarea readonly rows="6" aria-label=${`Prompt for batch ${batch.number}`}
+        onFocus=${(e) => e.target.select()} value=${prompt}></textarea>` : null}
+      <${ErrorNote} error=${error} />
+    </li>`;
+}
+
+function ChatImport({ onChange, refresh }) {
+  const [info, error, reload] = useApi("/api/chat-import");
+  useEffect(() => { if (refresh) reload(); }, [refresh]);
+  const [reply, setReply] = useState("");
+  const [items, setItems] = useState(null);
+  const [done, setDone] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const send = async (path) => {
+    setBusy(true); setActionError(null); setDone(null);
+    try {
+      const result = await api(path, { method: "POST", body: { reply } });
+      if (path.endsWith("preview")) setItems(result);
+      else {
+        setItems(null); setReply(""); reload(); onChange();
+        const made = result.filter((i) => i.status === "created").length;
+        setDone(`Imported ${count(made, "recipe")}. They are waiting in Review, where you can edit them.`);
+      }
+    } catch (e) { setActionError(e); } finally { setBusy(false); }
+  };
+  if (!info) return html`<${ErrorNote} error=${error} />`;
+  const ready = items ? items.filter((i) => i.status === "new").length : 0;
+  return html`
+    <div class="chat-import">
+      <p class="muted">No API key? Claude can read the pages in a chat instead:</p>
+      <ol class="small">
+        <li>Download a batch PDF and copy its prompt.</li>
+        <li>In a new chat at <a href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">claude.ai</a>,
+          attach the PDF, paste the prompt and send.</li>
+        <li>Copy Claude's whole reply, paste it below, and check it.</li>
+      </ol>
+      ${!info.pdf_on_disk ? html`<p class="warn">Choose ${info.pdf_name} above first; the batches are cut from it.</p>`
+        : info.missing === 0 ? html`<p>Every recipe in the collection is in the library.</p>`
+        : html`<p>${count(info.missing, "recipe")} still to import:</p>
+          <ul class="plain">${info.batches.map((b) => html`<${Batch} key=${b.number} batch=${b} />`)}</ul>`}
+      <label>Claude's reply
+        <textarea rows="6" value=${reply} placeholder="Paste the whole reply, including the json block"
+          onInput=${(e) => { setReply(e.target.value); setItems(null); }}></textarea></label>
+      <div class="actions">
+        <button class="secondary" disabled=${busy || !reply.trim()} onClick=${() => send("/api/chat-import/preview")}>Check reply</button>
+        ${items ? html`<button disabled=${busy || !ready} onClick=${() => send("/api/chat-import")}>
+          Import ${count(ready, "recipe")}</button>` : null}
+      </div>
+      ${items ? html`<ul class="plain preview">${items.map((i) => html`
+        <li class=${i.status}>
+          ${i.status === "new" ? "✓" : i.status === "exists" ? "–" : "✗"} ${i.id} ${i.title}
+          <span class="muted small">${i.status === "exists" ? " already imported"
+            : i.status === "new" ? ` · ${count(i.ingredients, "ingredient")}, ${count(i.steps, "step")}` : ""}</span>
+          ${i.problems.length ? html`<span class="small"> (${i.problems.join("; ")})</span>` : null}
+        </li>`)}</ul>` : null}
+      ${done ? html`<p class="note" role="status">${done} <a href="#/review">Open Review</a></p>` : null}
+      <${ErrorNote} error=${actionError} />
+    </div>`;
+}
+
 function AddRecipes({ status, onChange }) {
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -93,7 +179,11 @@ function AddRecipes({ status, onChange }) {
     </div>
     <${Progress} job=${job} />
     <${ErrorNote} error=${error} />
-    <${ClaudeKey} status=${status} onChange=${onChange} />`;
+    <${ClaudeKey} status=${status} onChange=${onChange} />
+    <details class="chat-details" open=${!status.api_key.set && status.import.needs_agent > 0}>
+      <summary>Use a Claude chat instead (no API key)</summary>
+      <${ChatImport} onChange=${onChange} refresh=${`${status.pdf_on_disk}:${status.import.state}`} />
+    </details>`;
 }
 
 export function GetStarted({ status, onChange, onPlan, busy }) {

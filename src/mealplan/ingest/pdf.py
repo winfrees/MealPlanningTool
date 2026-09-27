@@ -202,20 +202,29 @@ def import_manifest(
             vision_only = all(len(p.text.strip()) < 50 for p in pages)
             confidence = 0.7 if vision_only else 0.9
 
-        draft = to_draft(extracted, entry, pdf_path.name, confidence)
-        recipe = library.create_draft(session, draft, catalog, ref=entry.id)
-        recipe.household_notes = entry.household_notes
-        signals = library.household_signals(entry.household_notes)
-        if signals.rating is not None:
-            library.rate(
-                session,
-                recipe,
-                signals.rating,
-                SEED_RATING_DATE,
-                notes=f"seed from note: {entry.household_notes}",
-            )
-        if entry.variant_family:
-            library.add_to_family(session, recipe, entry.variant_family)
+        create_from_manifest(
+            session, to_draft(extracted, entry, pdf_path.name, confidence), entry, catalog
+        )
         report.created.append(entry.id)
-        session.flush()
     return report
+
+
+def create_from_manifest(
+    session: Session, draft: RecipeDraft, entry: ManifestRecipe, catalog: Catalog
+) -> Recipe:
+    """A draft under the manifest's id, with its household notes, seed rating and family."""
+    recipe = library.create_draft(session, draft, catalog, ref=entry.id)
+    recipe.household_notes = entry.household_notes
+    signals = library.household_signals(entry.household_notes)
+    if signals.rating is not None:
+        library.rate(
+            session,
+            recipe,
+            signals.rating,
+            SEED_RATING_DATE,
+            notes=f"seed from note: {entry.household_notes}",
+        )
+    if entry.variant_family:
+        library.add_to_family(session, recipe, entry.variant_family)
+    session.flush()
+    return recipe

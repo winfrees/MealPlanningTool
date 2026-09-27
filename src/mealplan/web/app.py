@@ -39,9 +39,11 @@ from mealplan.core.render_list import (
 from mealplan.core.scaling import scale_quantity
 from mealplan.core.shopping import ListLine
 from mealplan.core.units import format_qty
-from mealplan.ingest import review_queue
-from mealplan.models.enums import Location, Meal, RecipeStatus
+from mealplan.ingest import chat_import, review_queue
+from mealplan.ingest.chat_import import ChatImportError
+from mealplan.models.enums import Location, Meal, MealRole, RecipeStatus
 from mealplan.models.manifest import load_manifest
+from mealplan.models.schemas import RecipeEdit
 from mealplan.models.tables import Ingredient, Rating, Recipe
 from mealplan.web import auth, launch
 from mealplan.web.importer import ImportJob, ImportRefused, check_pdf
@@ -65,6 +67,10 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 class ApiKeyBody(BaseModel):
     key: str = Field(max_length=500)
+
+
+class ChatReplyBody(BaseModel):
+    reply: str = Field(max_length=chat_import.MAX_REPLY_CHARS)
 
 
 class LoginBody(BaseModel):
@@ -286,6 +292,7 @@ def create_app(
     S = Annotated[Session, Depends(session)]
 
     for error, status in (
+        (ChatImportError, 400),
         (credentials.KeyProblem, 400),
         (ImportRefused, 400),
         (LibraryError, 400),
@@ -438,6 +445,43 @@ def create_app(
                 }
             )
         return out
+
+    @app.get("/api/recipes/{ref}/edit")
+    def recipe_for_edit(ref: str, s: S) -> dict[str, Any]:
+        r = library.get_recipe(s, ref)
+        return {
+            "ref": r.ref,
+            "status": r.status.value,
+            "title": r.title,
+            "servings": r.servings,
+            "prep_minutes": r.prep_minutes,
+            "cook_minutes": r.cook_minutes,
+            "total_minutes": r.total_minutes,
+            "meal_role": r.meal_role.value if r.meal_role else None,
+            "tags": r.tags,
+            "household_notes": r.household_notes,
+            "ingredients": [i.raw_text for i in r.ingredients],
+            "steps": [
+                {
+                    "text": st.text,
+                    "equipment": st.equipment,
+                    "active_minutes": st.active_minutes,
+                    "passive_minutes": st.passive_minutes,
+                }
+                for st in r.steps
+            ],
+            "sources": [
+                {"title": x.title, "file": x.file, "pages": x.pages, "confidence": x.confidence}
+                for x in r.sources
+            ],
+            "roles": [m.value for m in MealRole],
+            "issues": review_queue.issues(r),
+        }
+
+    @app.put("/api/recipes/{ref}")
+    def save_recipe(ref: str, body: RecipeEdit, s: S) -> dict[str, Any]:
+        r = library.edit_recipe(s, library.get_recipe(s, ref), body, Catalog.from_db(s))
+        return {"ref": r.ref, "issues": review_queue.issues(r)}
 
     @app.get("/api/recipes/{ref}")
     def recipe(
@@ -722,6 +766,68 @@ def create_app(
         partial.replace(source_pdf)
         importer.start(source_pdf)
         return importer.status()
+
+    # --- Claude chat import (no API key) ---
+
+    def chat_batch(s: Session, number: int) -> chat_import.Batch:
+        for b in chat_import.pending_batches(s, manifest):
+            if b.number == number:
+                return b
+        raise HTTPException(404, f"batch {number} has nothing left to import")
+
+    @app.get("/api/chat-import")
+    def chat_batches(s: S) -> dict[str, Any]:
+        pending = chat_import.pending_batches(s, manifest)
+        return {
+            "pdf_on_disk": source_pdf.exists(),
+            "pdf_name": manifest.source_pdf,
+            "missing": sum(len(b.entries) for b in pending),
+            "batches": [
+                {
+                    "number": b.number,
+                    "file": b.file_name(),
+                    "pages": len(b.pages),
+                    "recipes": [{"id": e.id, "title": e.title} for e in b.entries],
+                }
+                for b in pending
+            ],
+        }
+
+    @app.get("/api/chat-import/{number}/prompt")
+    def chat_prompt(number: int, s: S) -> dict[str, str]:
+        return {"prompt": chat_import.prompt(chat_batch(s, number))}
+
+    @app.get("/api/chat-import/{number}/pdf")
+    def chat_pdf(number: int, s: S) -> Response:
+        if not source_pdf.exists():
+            raise HTTPException(404, f"upload {manifest.source_pdf} first (Get started, step 1)")
+        batch = chat_batch(s, number)
+        return Response(
+            chat_import.batch_pdf(source_pdf, batch),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{batch.file_name()}"'},
+        )
+
+    def items_json(items: list[chat_import.PreviewItem]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": i.id,
+                "title": i.title,
+                "status": i.status,
+                "ingredients": i.ingredients,
+                "steps": i.steps,
+                "problems": i.problems,
+            }
+            for i in items
+        ]
+
+    @app.post("/api/chat-import/preview")
+    def chat_preview(body: ChatReplyBody, s: S) -> list[dict[str, Any]]:
+        return items_json(chat_import.preview(s, manifest, body.reply))
+
+    @app.post("/api/chat-import")
+    def chat_import_reply(body: ChatReplyBody, s: S) -> list[dict[str, Any]]:
+        return items_json(chat_import.import_reply(s, manifest, Catalog.from_db(s), body.reply))
 
     # --- frontend ---
 

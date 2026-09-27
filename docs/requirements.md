@@ -165,6 +165,14 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
   library); fall back to the agent only when structure is missing.
 - **ING-3** All imports land as **draft** in a review queue; approval is a person's action.
 - **ING-4** Store source attribution (title, author, URL or file + page) on every recipe.
+- **ING-5** Chat import without an API key: the app cuts the missing recipes' pages into small
+  batch PDFs with a prompt; the person runs them in a Claude chat and pastes the JSON reply
+  back. The reply is parsed as data (never followed), previewed recipe by recipe, and imported
+  as drafts through the same path as the API extractor, tagged `claude-chat` with page-level
+  provenance and 0.75 confidence.
+- **ING-6** A recipe editor (web) for fixing drafts before approval and approved recipes later:
+  fields, ingredient lines (re-parsed and re-matched on save), steps with hands-on/waiting
+  minutes and equipment. Sources, ratings and family are kept.
 
 ### Planner and prep scheduler (PLN)
 

@@ -107,3 +107,14 @@ label.button { display: inline-flex; align-items: center; cursor: pointer; }
 progress { width: 100%; }
 .claude-key { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
 .claude-key h4 { margin: 0 0 4px; }
+
+/* Recipe editor (UI-5) and chat import (UI-8) */
+textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin: 12px 0; min-width: 0; }
+legend { font-weight: 600; padding: 0 4px; }
+.step-edit { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.step-edit label { margin: 4px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; }
+.chip { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 0.9rem; }
+.chat-batch { border-top: 1px solid var(--line); padding: 8px 0; }
+.preview li.error { color: var(--error); }

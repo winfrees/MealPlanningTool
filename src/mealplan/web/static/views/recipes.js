@@ -64,6 +64,7 @@ export function RecipeView({ ref_ }) {
   return html`
     <p><a href="#/recipes">‹ Recipes</a></p>
     <h1>${recipe.title}</h1>
+    <p><a class="button secondary small" href=${`#/edit/${encodeURIComponent(recipe.ref)}`}>Edit</a></p>
     <p class="muted">${recipe.ref} · ${recipe.status} · ${recipe.collection}${recipe.role ? ` · ${recipe.role}` : ""}
       ${recipe.family ? html` · family ${recipe.family}` : null}</p>
     ${recipe.variants.length ? html`<p>Other versions: ${recipe.variants.map((v) => html`<a href=${`#/recipe/${v}`}>${v}</a> `)}</p>` : null}

@@ -362,6 +362,61 @@ def import_pdf(
     console.print(f"Agent cost this run: ${report.cost_usd:.2f}")
 
 
+@import_app.command("chat-batches")
+def import_chat_batches(
+    pdf: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Source PDF.")],
+    out: Annotated[Path, typer.Option(help="Folder for the batch PDFs and prompts.")] = Path(
+        "chat-batches"
+    ),
+) -> None:
+    """Write a small PDF and a prompt per batch of missing recipes, for a Claude chat."""
+    from mealplan.ingest import chat_import
+
+    manifest = load_manifest(get_settings().data_dir / "core_recipe_manifest.json")
+    with _session() as s:
+        pending = chat_import.pending_batches(s, manifest)
+    if not pending:
+        console.print("Every recipe in the collection is in the library.")
+        return
+    out.mkdir(parents=True, exist_ok=True)
+    for batch in pending:
+        (out / batch.file_name()).write_bytes(chat_import.batch_pdf(pdf, batch))
+        prompt_file = out / batch.file_name().replace(".pdf", "-prompt.txt")
+        prompt_file.write_text(chat_import.prompt(batch), encoding="utf-8")
+        console.print(f"{batch.file_name()}: {', '.join(e.id for e in batch.entries)}")
+    console.print(
+        f"Attach each PDF in a claude.ai chat with its prompt, save the reply to a file, "
+        f"then run `mealctl import chat REPLY_FILE`. Files are in {out}/."
+    )
+
+
+@import_app.command("chat")
+def import_chat(
+    reply: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Claude's reply.")],
+    dry_run: Annotated[bool, typer.Option(help="Only show what would be imported.")] = False,
+) -> None:
+    """Import recipes from a Claude chat reply (the JSON from a chat-batches prompt)."""
+    from mealplan.ingest import chat_import
+
+    manifest = load_manifest(get_settings().data_dir / "core_recipe_manifest.json")
+    text = reply.read_text(encoding="utf-8")
+    with _session() as s:
+        try:
+            if dry_run:
+                items = chat_import.preview(s, manifest, text)
+            else:
+                items = chat_import.import_reply(s, manifest, _catalog(s), text)
+        except chat_import.ChatImportError as e:
+            console.print(f"[red]{e}[/]")
+            raise typer.Exit(1) from None
+    for item in items:
+        problems = f" ({'; '.join(item.problems)})" if item.problems else ""
+        console.print(f"{item.status:8} {item.id} {item.title}{problems}", highlight=False)
+    created = sum(i.status == "created" for i in items)
+    if not dry_run:
+        console.print(f"Created {created} drafts; see `mealctl review list`.")
+
+
 @import_app.command("failures")
 def import_failures() -> None:
     """Imports that failed validation, grounding, or the API after one retry."""

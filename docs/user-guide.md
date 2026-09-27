@@ -14,8 +14,32 @@ that look fine, and plan the week. Web-print pages import for free; scanned and 
 pages need Claude: paste an API key from console.anthropic.com (it starts with `sk-ant-`) into
 the **Claude** box on Get started (or **Setup** later), which checks it and saves it in `.env`,
 then import again (recipes already imported are skipped). In `.env` the key can be written as
-`ANTHROPIC_API_KEY=...` or `MEALPLAN_ANTHROPIC_API_KEY=...`; no model name is needed. The demo uses its own `demo.db` and never touches
-your recipes.
+`ANTHROPIC_API_KEY=...` or `MEALPLAN_ANTHROPIC_API_KEY=...`; no model name is needed. The
+demo uses its own `demo.db` and never touches your recipes.
+
+### No API key: import with a Claude chat
+
+Under **Use a Claude chat instead** (Get started, or **Setup** later) the recipes still missing
+are split into batches of about ten pages. For each batch:
+
+1. **Download PDF** (just that batch's pages) and **Copy prompt**.
+2. In a new chat at claude.ai, attach the PDF, paste the prompt and send.
+3. Copy Claude's whole reply, paste it into **Claude's reply**, and press **Check reply**. The
+   check lists each recipe it found and anything wrong (an unknown id, no ingredients).
+4. **Import**. The recipes land in **Review** as drafts tagged `claude-chat`, with the page
+   they came from. Batches you have finished drop off the list.
+
+From the terminal: `mealctl import chat-batches data/source/Recipes_12Sept26.pdf` writes the
+batch PDFs and prompts to `chat-batches/`; save each reply to a file and run
+`mealctl import chat reply.txt` (add `--dry-run` to check first).
+
+### Fixing a recipe
+
+**Edit** (on a Review card or a recipe page) opens the editor: title, servings, meal, times,
+ingredients (one per line, as written), steps with hands-on and waiting minutes and equipment,
+tags and notes. Saving matches the ingredients to the catalog again and lists anything still
+to check, such as an ingredient it does not recognise. Hands-on minutes matter: the planner
+uses them for the weeknight limit and the Sunday prep schedule.
 
 Everything below also works in the browser: **Week** (plan, shuffle, swap, lock, cooked, day
 cards, prep checklist), **Recipes** (search, open, scale, rate, tag), **Review** (approve,

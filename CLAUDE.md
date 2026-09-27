@@ -25,6 +25,7 @@ uv run mealctl db upgrade  # create/migrate the SQLite DB (MEALPLAN_DB_PATH, def
 uv run mealctl manifest check
 uv run mealctl catalog seed    # load data/ingredients.csv
 uv run mealctl import pdf data/source/Recipes_12Sept26.pdf [--no-agent] [--only core-001]
+uv run mealctl import chat-batches data/source/Recipes_12Sept26.pdf   # then: import chat REPLY
 uv run mealctl review list     # then review show / approve / merge / family
 uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / cards / swap / lock
 uv run mealctl prep show       # Sunday prep checklist
@@ -52,7 +53,8 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   `shopping.py` (pure list engine; ADR-0006), `render_list.py` (md/text/pdf), `kitchen.py`
   (DB side of lists, cooking and prep deductions), `setup.py` (first run, demo household).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
-  path), `grounding.py`, `review_queue.py`.
+  path), `chat_import.py` (batches and prompts for a Claude chat, reply parsing; ING-5),
+  `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
 - `src/mealplan/agents/credentials.py`: tidy and check the Anthropic API key (read as
