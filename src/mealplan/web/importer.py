@@ -125,6 +125,8 @@ class ImportJob:
             self._update(state="stopped", message=f"{e}. Recipes imported so far are kept.")
             return
         except Exception as e:  # keep the server up; show the reason on the page
-            self._update(state="stopped", message=f"Import stopped: {e}")
+            self._update(
+                state="stopped", message=f"Import stopped: {e}. Recipes imported so far are kept."
+            )
             return
         self._update(state="done")

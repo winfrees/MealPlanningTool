@@ -105,3 +105,5 @@ summary { cursor: pointer; color: var(--muted); }
 label.button { display: inline-flex; align-items: center; cursor: pointer; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 progress { width: 100%; }
+.claude-key { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
+.claude-key h4 { margin: 0 0 4px; }

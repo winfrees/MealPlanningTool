@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +11,11 @@ class Settings(BaseSettings):
 
     db_path: Path = Path("mealplan.db")
     data_dir: Path = Path("data")
-    anthropic_api_key: SecretStr | None = None
+    # Either name works, in the environment or in `.env`.
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MEALPLAN_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+    )
     agent_weekly_budget_usd: float = 10.0
     web_password: SecretStr | None = None  # required by `mealctl serve` (UI-6)
     web_secret_file: Path | None = None  # session signing secret; default: beside the DB

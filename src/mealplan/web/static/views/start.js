@@ -1,5 +1,5 @@
 // Getting started (UI-8): add the recipe collection, review it, plan the first week.
-import { html, useState, useEffect, api, ErrorNote, count } from "../lib.js";
+import { html, useState, useEffect, api, useApi, ErrorNote, Loading, count } from "../lib.js";
 
 function Progress({ job }) {
   if (job.state === "running") {
@@ -12,9 +12,53 @@ function Progress({ job }) {
       ${job.message ? html`<p class="warn">${job.message}</p>` : null}
       <p>Imported ${count(job.created, "recipe")}${job.skipped ? ` (${job.skipped} were already here)` : ""}.</p>
       ${job.needs_agent ? html`<p class="muted">${count(job.needs_agent, "recipe")} (scans or photos)
-        need Claude to read them. To add them, put <code>ANTHROPIC_API_KEY=…</code> in the
-        <code>.env</code> file, restart the app, and import again; recipes already imported are skipped.</p>` : null}
+        need Claude to read them. Add your Anthropic API key below, then import again;
+        recipes already imported are skipped.</p>` : null}
       ${job.failed ? html`<p class="muted">${job.failed} could not be read; see <code>mealctl import failures</code>.</p>` : null}
+    </div>`;
+}
+
+// The Anthropic API key, for the pages only Claude can read. Saved on the server in .env.
+function ClaudeKey({ status, onChange }) {
+  const key = status.api_key;
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [note, setNote] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (path, body, done) => {
+    setBusy(true); setError(null); setNote(null);
+    try { await api(path, { method: "POST", body }); done(); onChange(); }
+    catch (e) { setError(e); }
+    finally { setBusy(false); }
+  };
+  const save = (e) => {
+    e.preventDefault();
+    run("/api/setup/api-key", { key: value }, () => {
+      setValue(""); setEditing(false); setNote("Key checked and saved. Import again to add the scanned recipes.");
+    });
+  };
+  const check = () => run("/api/setup/api-key/check", undefined, () => setNote("The key works."));
+  return html`
+    <div class="claude-key">
+      <h4>Claude (for scanned pages)</h4>
+      ${key.set && !editing ? html`
+        <p>API key saved (ends in <code>${key.ends_with}</code>).</p>
+        <div class="actions">
+          <button class="secondary small" disabled=${busy} onClick=${check}>${busy ? "Checking…" : "Check it works"}</button>
+          <button class="link" onClick=${() => { setEditing(true); setNote(null); setError(null); }}>Use a different key</button>
+        </div>` : html`
+        <p class="muted">Paste an API key from <a href="https://console.anthropic.com/settings/keys"
+          target="_blank" rel="noopener noreferrer">console.anthropic.com</a>.
+          It starts with <code>sk-ant-</code>; the model name isn't needed.</p>
+        <form class="row" onSubmit=${save}>
+          <input type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"
+            value=${value} onInput=${(e) => setValue(e.target.value)} aria-label="Anthropic API key" />
+          <button type="submit" disabled=${busy || !value.trim()}>${busy ? "Checking…" : "Save key"}</button>
+        </form>
+        ${key.set ? html`<button class="link" onClick=${() => setEditing(false)}>Cancel</button>` : null}`}
+      ${note ? html`<p class="note" role="status">${note}</p>` : null}
+      <${ErrorNote} error=${error} />
     </div>`;
 }
 
@@ -48,7 +92,8 @@ function AddRecipes({ status, onChange }) {
       </label>
     </div>
     <${Progress} job=${job} />
-    <${ErrorNote} error=${error} />`;
+    <${ErrorNote} error=${error} />
+    <${ClaudeKey} status=${status} onChange=${onChange} />`;
 }
 
 export function GetStarted({ status, onChange, onPlan, busy }) {
@@ -98,4 +143,19 @@ export function GetStarted({ status, onChange, onPlan, busy }) {
         </li>
       </ol>
     </section>`;
+}
+
+// Always reachable (#/start): import more recipes or change the API key after the first week.
+export function StartView() {
+  const [status, error, reload] = useApi("/api/setup");
+  const [planned, setPlanned] = useState(null);
+  const plan = async () => {
+    await api("/api/week/plan", { method: "POST", body: {} });
+    setPlanned(true);
+  };
+  if (!status) return html`<${ErrorNote} error=${error} /><${Loading} />`;
+  return html`
+    <h1>Import and setup</h1>
+    ${planned ? html`<p class="note" role="status">Planned. <a href="#/week">Open the week</a>.</p>` : null}
+    <${GetStarted} status=${status} onChange=${reload} onPlan=${plan} busy=${false} />`;
 }

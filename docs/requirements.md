@@ -244,7 +244,9 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
   loads the catalog, asks once for the household password and opens the browser. A new install
   shows a "Get started" guide: import the collection PDF from the browser (web prints free,
   other pages via the extractor when an API key is set, with progress), approve the drafts that
-  have no issues in one step, then plan the week. `mealctl serve --demo` runs a sample household
+  have no issues in one step, then plan the week. The Anthropic API key can be pasted there:
+  it is tidied (variable name, quotes), checked with a free Models API call, and saved to
+  `.env`; a rejected key or an empty account stops an import with one clear message. `mealctl serve --demo` runs a sample household
   in a separate database so the app can be tried before any import.
 
 ## 5. Agentic components and guardrails

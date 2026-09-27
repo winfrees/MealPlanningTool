@@ -322,7 +322,7 @@ def import_pdf(
     ] = True,
 ) -> None:
     """Import the core collection into the review queue: web prints first, then the agent."""
-    from mealplan.agents.extractor import ClaudeExtractor
+    from mealplan.agents.extractor import AccountError, ClaudeExtractor
 
     settings = get_settings()
     manifest_data = load_manifest(manifest or settings.data_dir / "core_recipe_manifest.json")
@@ -349,6 +349,9 @@ def import_pdf(
         except BudgetExceeded as e:
             console.print(f"[yellow]{e}[/] Recipes imported so far are kept.")
             return
+        except AccountError as e:
+            console.print(f"[red]Import stopped: {e}.[/]")
+            raise typer.Exit(1) from None
     console.print(f"Created {len(report.created)} drafts: {' '.join(report.created)}")
     if report.skipped:
         console.print(f"Already in the library: {len(report.skipped)}")

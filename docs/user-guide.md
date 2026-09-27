@@ -11,8 +11,10 @@ uv run mealctl serve --host 0.0.0.0  # reachable from phones on the home network
 The first run asks you to choose a household password (it is kept in `.env`). A new install
 opens on **Get started**: import `Recipes_12Sept26.pdf` from the browser, approve the recipes
 that look fine, and plan the week. Web-print pages import for free; scanned and photographed
-pages need Claude, so put `ANTHROPIC_API_KEY=...` in `.env`, restart, and import again to add
-them (recipes already imported are skipped). The demo uses its own `demo.db` and never touches
+pages need Claude: paste an API key from console.anthropic.com (it starts with `sk-ant-`) into
+the **Claude** box on Get started (or **Setup** later), which checks it and saves it in `.env`,
+then import again (recipes already imported are skipped). In `.env` the key can be written as
+`ANTHROPIC_API_KEY=...` or `MEALPLAN_ANTHROPIC_API_KEY=...`; no model name is needed. The demo uses its own `demo.db` and never touches
 your recipes.
 
 Everything below also works in the browser: **Week** (plan, shuffle, swap, lock, cooked, day

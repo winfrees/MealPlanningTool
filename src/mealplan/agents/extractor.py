@@ -225,6 +225,19 @@ class ClaudeExtractor:
         for attempt in range(2):
             try:
                 response, latency = self._call(messages)
+            except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+                raise AccountError(
+                    f"Anthropic rejected the API key ({type(e).__name__}); "
+                    "check it on the Get started page or in .env"
+                ) from e
+            except anthropic.BadRequestError as e:
+                if "credit balance" in str(e).lower():
+                    raise AccountError(
+                        "the Anthropic account is out of credit; add credit at "
+                        "console.anthropic.com (Settings, Billing)"
+                    ) from e
+                result.failure = Failure("api", f"{type(e).__name__}: {e}")
+                return result
             except anthropic.APIError as e:
                 result.failure = Failure("api", f"{type(e).__name__}: {e}")
                 return result
@@ -274,6 +287,11 @@ class ClaudeExtractor:
                 result.calls.append(_with_outcome(record, "failed"))
                 result.failure = failure
         return result
+
+
+class AccountError(RuntimeError):
+    """A problem with the API key or account: every call would fail the same way, so an
+    import stops instead of recording a failure per recipe."""
 
 
 def _with_outcome(record: CallRecord, outcome: str) -> CallRecord:

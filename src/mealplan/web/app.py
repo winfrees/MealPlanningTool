@@ -3,12 +3,12 @@
 Handlers are thin: each calls the same core function as the matching CLI command.
 """
 
-import os
 from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any
 
+import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +17,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mealplan import db
-from mealplan.agents.extractor import RecipeExtractor
+from mealplan.agents import credentials
+from mealplan.agents.extractor import ClaudeExtractor, RecipeExtractor
 from mealplan.config import Settings
 from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts, setup
 from mealplan.core.base_week import rotation
@@ -42,7 +43,7 @@ from mealplan.ingest import review_queue
 from mealplan.models.enums import Location, Meal, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.tables import Ingredient, Rating, Recipe
-from mealplan.web import auth
+from mealplan.web import auth, launch
 from mealplan.web.importer import ImportJob, ImportRefused, check_pdf
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -60,6 +61,10 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
 # --- request bodies ---------------------------------------------------------------------------
+
+
+class ApiKeyBody(BaseModel):
+    key: str = Field(max_length=500)
 
 
 class LoginBody(BaseModel):
@@ -213,28 +218,24 @@ def _shortfalls(short: list[Shortfall]) -> list[str]:
 # --- the app ----------------------------------------------------------------------------------
 
 
-def default_extractor(settings: Settings) -> Callable[[], RecipeExtractor | None]:
-    """The Claude extractor when an API key is configured; otherwise web prints only."""
+def claude_client(key: str) -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=key)
 
-    def make() -> RecipeExtractor | None:
-        key = settings.anthropic_api_key
-        if key is None and not os.environ.get("ANTHROPIC_API_KEY"):
-            return None
-        import anthropic
 
-        from mealplan.agents.extractor import ClaudeExtractor
+def claude_extractor(key: str) -> RecipeExtractor:
+    return ClaudeExtractor(claude_client(key))
 
-        if key is None:
-            return ClaudeExtractor(anthropic.Anthropic())
-        return ClaudeExtractor(anthropic.Anthropic(api_key=key.get_secret_value()))
 
-    return make
+def check_claude_key(key: str) -> None:
+    credentials.check_key(claude_client(key))
 
 
 def create_app(
     settings: Settings,
     today: Callable[[], date] = date.today,
     extractor: Callable[[], RecipeExtractor | None] | None = None,
+    key_checker: Callable[[str], None] = check_claude_key,
+    env_file: Path = Path(".env"),
 ) -> FastAPI:
     if settings.web_password is None or not settings.web_password.get_secret_value():
         raise RuntimeError("set MEALPLAN_WEB_PASSWORD before starting the web app")
@@ -245,8 +246,15 @@ def create_app(
         setup.prepare(s, settings.data_dir)
     manifest = load_manifest(settings.data_dir / "core_recipe_manifest.json")
     source_pdf = settings.data_dir / "source" / manifest.source_pdf
+    # The Anthropic API key: from settings, the environment, or pasted on Get started (UI-8).
+    configured = settings.anthropic_api_key
+    api_key = {"value": configured.get_secret_value() if configured else None}
+
+    def current_extractor() -> RecipeExtractor | None:
+        return claude_extractor(api_key["value"]) if api_key["value"] else None
+
     importer = ImportJob(
-        engine, manifest, extractor or default_extractor(settings), settings.agent_weekly_budget_usd
+        engine, manifest, extractor or current_extractor, settings.agent_weekly_budget_usd
     )
     secret = auth.load_secret(settings.web_secret_path)
     limiter = auth.LoginLimiter()
@@ -278,6 +286,7 @@ def create_app(
     S = Annotated[Session, Depends(session)]
 
     for error, status in (
+        (credentials.KeyProblem, 400),
         (ImportRefused, 400),
         (LibraryError, 400),
         (PlanError, 400),
@@ -655,7 +664,28 @@ def create_app(
             "pdf_name": manifest.source_pdf,
             "pdf_on_disk": source_pdf.exists(),
             "import": importer.status(),
+            "api_key": key_status(),
         }
+
+    def key_status() -> dict[str, Any]:
+        key = api_key["value"]
+        return {"set": bool(key), "ends_with": key[-4:] if key else None}
+
+    @app.post("/api/setup/api-key")
+    def save_api_key(body: ApiKeyBody) -> dict[str, Any]:
+        """Check a pasted key, then keep it in `.env` and use it from now on."""
+        key = credentials.clean_key(body.key)
+        key_checker(key)
+        launch.save_env_value(env_file, credentials.NAMES[0], key, replaces=credentials.NAMES[1:])
+        api_key["value"] = key
+        return key_status()
+
+    @app.post("/api/setup/api-key/check")
+    def check_api_key() -> dict[str, Any]:
+        if not api_key["value"]:
+            raise credentials.KeyProblem("no API key yet; paste one first")
+        key_checker(api_key["value"])
+        return {**key_status(), "ok": True}
 
     @app.post("/api/setup/import")
     def import_saved_pdf() -> dict[str, Any]:

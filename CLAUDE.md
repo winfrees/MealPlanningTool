@@ -55,6 +55,8 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
+- `src/mealplan/agents/credentials.py`: tidy and check the Anthropic API key (read as
+  `MEALPLAN_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`; the web Setup page can save it).
 - `src/mealplan/web/`: `app.py` (FastAPI JSON API; thin handlers over the core, same as the
   CLI), `auth.py` (household password, signed cookie, CSRF header), `importer.py` (PDF import
   from the browser), `launch.py` (first-run password, `--demo`), `static/` (no-build

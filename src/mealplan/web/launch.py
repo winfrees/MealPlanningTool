@@ -19,16 +19,23 @@ def save_password(env_file: Path, password: str) -> None:
     """Add the household password to `.env` (git-ignored), readable by this user only."""
     if len(password) < MIN_PASSWORD:
         raise ValueError(f"use at least {MIN_PASSWORD} characters")
-    if "\n" in password or "\r" in password:
-        raise ValueError("the password must be on one line")
+    save_env_value(env_file, ENV_KEY, password)
+
+
+def save_env_value(env_file: Path, name: str, value: str, replaces: tuple[str, ...] = ()) -> None:
+    """Set `name=value` in `.env`, dropping earlier lines for it (and for `replaces`), and keep
+    the file readable by this user only."""
+    if "\n" in value or "\r" in value:
+        raise ValueError("the value must be on one line")
+    names = (name, *replaces)
     lines = []
     if env_file.exists():
         lines = [
             line
             for line in env_file.read_text(encoding="utf-8").splitlines()
-            if not line.startswith(f"{ENV_KEY}=")
+            if line.split("=", 1)[0].strip() not in names
         ]
-    lines.append(f"{ENV_KEY}={password}")
+    lines.append(f"{name}={value}")
     fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
