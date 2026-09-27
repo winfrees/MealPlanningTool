@@ -55,7 +55,7 @@ files = ["src", "tests", "scripts"]
 mypy_path = "scripts"
 
 [[tool.mypy.overrides]]
-module = ["mealplan.ingest.pdf", "mealplan.core.render_list", "tests.test_pdf_import", "tests.test_shopping"]
+module = ["mealplan.ingest.pdf", "mealplan.web.importer", "mealplan.core.render_list", "tests.test_pdf_import", "tests.test_shopping"]
 disallow_untyped_calls = false  # pymupdf ships without type hints
 
 [[tool.mypy.overrides]]

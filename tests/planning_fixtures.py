@@ -1,4 +1,4 @@
-"""Build planner inputs from tests/golden/week/library.json (no database)."""
+"""Build planner inputs from the golden week library, data/sample_library.json (no database)."""
 
 import json
 from datetime import date
@@ -8,32 +8,30 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mealplan.core import library
+from mealplan.core import library, setup
 from mealplan.core.base_week import seed_house_meals
 from mealplan.core.components import ComponentSpec, load_components_csv, seed_components
 from mealplan.core.normalizer import Catalog
 from mealplan.core.parser import parse_ingredient
 from mealplan.core.planner import PlanInputs
 from mealplan.core.recipe_facts import Dish, DishIngredient, StepTime
-from mealplan.ingest import review_queue
 from mealplan.models.enums import (
     Collection,
     InventorySource,
     Location,
     Meal,
     MealRole,
-    SourceKind,
 )
-from mealplan.models.schemas import IngredientLine, RecipeDraft, SourceRef, StepDraft
 from mealplan.models.tables import Ingredient, InventoryItem, MealSlot
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_WEEK = ROOT / "tests" / "golden" / "week"
+GOLDEN_LIBRARY = ROOT / "data" / "sample_library.json"
 GOLDEN_ON_HAND = {"spinach": [(5.0, "oz")]}  # matches populate_golden's inventory
 
 
 def load_golden() -> dict[str, Any]:
-    data: dict[str, Any] = json.loads((GOLDEN_WEEK / "library.json").read_text(encoding="utf-8"))
+    data: dict[str, Any] = json.loads(GOLDEN_LIBRARY.read_text(encoding="utf-8"))
     return data
 
 
@@ -114,26 +112,7 @@ def populate_golden(session: Session, catalog: Catalog) -> None:
     """Import the golden library through the normal library path, with history,
     expiring spinach, and the generic prep components."""
     data = load_golden()
-    for raw in data["recipes"]:
-        draft = RecipeDraft(
-            title=raw["title"],
-            servings=raw.get("servings"),
-            meal_role=MealRole(raw["role"]),
-            tags=raw.get("tags", []),
-            collection=Collection(raw.get("collection", "core")),
-            ingredients=[IngredientLine(raw_text=line) for line in raw["ingredients"]],
-            steps=[
-                StepDraft(text=t, active_minutes=a, passive_minutes=p, equipment=e)
-                for t, a, p, e in raw["steps"]
-            ],
-            sources=[SourceRef(kind=SourceKind.MANUAL)],
-        )
-        recipe = library.create_draft(session, draft, catalog, ref=raw["ref"])
-        review_queue.approve(session, recipe)
-        if raw.get("family"):
-            library.add_to_family(session, recipe, raw["family"])
-        for score in raw.get("ratings", []):
-            library.rate(session, recipe, score, date(2026, 9, 1))
+    setup.load_library(session, catalog, data["recipes"])
     for ref, day in data["history"].items():
         recipe = library.get_recipe(session, ref)
         session.add(

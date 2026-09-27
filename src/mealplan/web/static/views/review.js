@@ -1,5 +1,5 @@
 // Review queue (UI-5, ING-3): approve, reject, merge a copy, or group a variant.
-import { html, useState, api, useApi, ErrorNote, Loading } from "../lib.js";
+import { html, useState, api, useApi, ErrorNote, Loading, count } from "../lib.js";
 
 function Draft({ item, onDone }) {
   const [family, setFamily] = useState("");
@@ -36,10 +36,24 @@ function Draft({ item, onDone }) {
 export function ReviewView() {
   const [items, error, reload] = useApi("/api/review");
   const [message, setMessage] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const done = (text) => { setMessage(text); reload(); };
+  const approveReady = async () => {
+    setActionError(null);
+    try {
+      const r = await api("/api/review/approve-ready", { method: "POST" });
+      done(r.approved.length ? `Approved ${count(r.approved.length, "recipe")} with no issues.`
+        : "Every recipe here needs a look first.");
+    } catch (e) { setActionError(e); }
+  };
   return html`
     <h1>Review queue</h1>
-    <${ErrorNote} error=${error} />
+    <${ErrorNote} error=${error || actionError} />
+    ${items && items.length ? html`
+      <div class="actions">
+        <button onClick=${approveReady}>Approve the ones that look fine</button>
+        <span class="muted small">No issues and no look-alike already in the library.</span>
+      </div>` : null}
     ${message ? html`<p class="note" role="status">${message}</p>` : null}
     ${!items ? html`<${Loading} />` : items.length === 0 ? html`<p class="muted">Nothing waiting for review.</p>`
       : items.map((item) => html`<${Draft} key=${item.ref} item=${item} onDone=${done} />`)}`;

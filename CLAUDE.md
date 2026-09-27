@@ -30,7 +30,7 @@ uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / card
 uv run mealctl prep show       # Sunday prep checklist
 uv run mealctl inventory add|list|expiring|staples
 uv run mealctl list show [--format md|text|pdf] [--output FILE]
-MEALPLAN_WEB_PASSWORD=... uv run mealctl serve   # web app at http://localhost:8000
+uv run mealctl serve [--demo]  # web app at http://localhost:8000; first run asks for a password
 make e2e                       # browser tests (needs: uv run playwright install chromium)
 make evals                     # extractor eval; calls the real API
 UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden files, then review
@@ -50,18 +50,20 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning),
   `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`), `inventory.py`,
   `shopping.py` (pure list engine; ADR-0006), `render_list.py` (md/text/pdf), `kitchen.py`
-  (DB side of lists, cooking and prep deductions).
+  (DB side of lists, cooking and prep deductions), `setup.py` (first run, demo household).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
   path), `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
 - `src/mealplan/web/`: `app.py` (FastAPI JSON API; thin handlers over the core, same as the
-  CLI), `auth.py` (household password, signed cookie, CSRF header), `static/` (no-build
+  CLI), `auth.py` (household password, signed cookie, CSRF header), `importer.py` (PDF import
+  from the browser), `launch.py` (first-run password, `--demo`), `static/` (no-build
   Preact + htm frontend; `vendor/README.md` lists the vendored files). ADR-0007.
 - `src/mealplan/retail/`: adapter protocol only, until M7.
-- `data/`: core recipe manifest, ingredient catalog, prep components; the source PDF lives in
-  git-ignored `data/source/`.
-- `tests/golden/week/`: the golden week (library fixture and expected plan, prep, day cards).
+- `data/`: core recipe manifest, ingredient catalog, prep components, `sample_library.json`
+  (the demo's recipes and the golden week's library); the source PDF lives in git-ignored
+  `data/source/`.
+- `tests/golden/week/`: the golden week's expected plan, prep, day cards and list.
 - `docs/decisions/`: ADRs; add one per notable choice.
 
 ## Releases

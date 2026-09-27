@@ -95,3 +95,13 @@ summary { cursor: pointer; color: var(--muted); }
   .filters { grid-template-columns: 2fr 1fr 1fr 1fr; }
   .filters input[type="search"] { grid-column: auto; }
 }
+
+/* Getting started (UI-8) */
+.steps { padding-left: 1.4em; }
+.steps > li { margin: 10px 0 16px; }
+.steps > li h3 { margin: 0 0 4px; }
+.steps > li.done h3::after { content: " ✓"; color: var(--accent); }
+.button.disabled { opacity: 0.5; pointer-events: none; }
+label.button { display: inline-flex; align-items: center; cursor: pointer; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+progress { width: 100%; }

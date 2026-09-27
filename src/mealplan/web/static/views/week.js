@@ -1,5 +1,6 @@
 // Week plan screen (UI-5): plan, re-plan, swap, lock, cooked, day cards, prep checklist.
-import { html, useState, useEffect, api, useApi, ErrorNote, Loading, fmtMinutes, addDays } from "../lib.js";
+import { html, useState, useEffect, api, useApi, ErrorNote, Loading, fmtMinutes, addDays, count } from "../lib.js";
+import { GetStarted } from "./start.js";
 
 function SwapPicker({ day, meal, onPick, onCancel }) {
   const [q, setQ] = useState("");
@@ -63,6 +64,7 @@ function Prep({ prep, onDone, busy }) {
 
 export function WeekView() {
   const [calendar] = useApi("/api/calendar");
+  const [setup, , reloadSetup] = useApi("/api/setup");
   const [start, setStart] = useState(null);
   const [week, setWeek] = useState(undefined);
   const [error, setError] = useState(null);
@@ -95,8 +97,10 @@ export function WeekView() {
       ? `Prep recorded. Not in inventory: ${r.not_in_inventory.join(", ")}` : "Prep recorded.");
   };
 
-  if (!start) return html`<${Loading} />`;
+  if (!start || !setup) return html`<${Loading} />`;
   const locked = week && week.status === "locked";
+  const starting = setup.approved === 0 || setup.import.state === "running";
+  const plan = () => act("/api/week/plan", {});
   return html`
     <div class="toolbar">
       <button class="secondary" aria-label="Previous week" onClick=${() => setStart(addDays(start, -7))}>‹</button>
@@ -105,10 +109,13 @@ export function WeekView() {
     </div>
     <${ErrorNote} error=${error} />
     ${message ? html`<p class="note" role="status">${message}</p>` : null}
-    ${week === undefined ? html`<${Loading} />` : week === null ? html`
+    ${!starting && setup.drafts ? html`
+      <p class="note"><a href="#/review">${count(setup.drafts, "imported recipe")}</a> waiting for a check.</p>` : null}
+    ${week === undefined ? html`<${Loading} />` : week === null ? starting ? html`
+      <${GetStarted} status=${setup} onChange=${reloadSetup} onPlan=${plan} busy=${busy} />` : html`
       <section class="card">
         <p>No plan for this week yet.</p>
-        <button disabled=${busy} onClick=${() => act("/api/week/plan", {})}>Plan this week</button>
+        <button disabled=${busy} onClick=${plan}>Plan this week</button>
       </section>` : html`
       <div class="actions">
         <span class="badge">${week.status}</span>

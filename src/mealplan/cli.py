@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mealplan import __version__, db
-from mealplan.config import get_settings
+from mealplan.config import Settings, get_settings
 from mealplan.core import inventory, kitchen, library, plan_store
 from mealplan.core.base_week import rotation, seed_house_meals
 from mealplan.core.components import load_components_csv, seed_components
@@ -654,18 +654,66 @@ def serve(
         str, typer.Option(help="127.0.0.1 keeps it on this computer; 0.0.0.0 opens it to the LAN.")
     ] = "127.0.0.1",
     port: int = 8000,
+    demo: Annotated[
+        bool, typer.Option(help="Try it out on sample recipes (demo.db; password: demo).")
+    ] = False,
+    open_browser: Annotated[
+        bool, typer.Option("--open/--no-open", help="Open the app in your browser.")
+    ] = True,
 ) -> None:
-    """Run the web app (UI-4). Needs MEALPLAN_WEB_PASSWORD."""
+    """Run the web app (UI-4, UI-8). The first run asks for a household password."""
+    import threading
+    import webbrowser
+
     import uvicorn
 
+    from mealplan.web import launch
     from mealplan.web.app import create_app
 
+    settings = get_settings()
+    if demo:
+        settings = launch.demo_settings(settings, date.today())
+        login = f"password: {launch.DEMO_PASSWORD}"
+    else:
+        if settings.web_password is None or not settings.web_password.get_secret_value():
+            settings = _first_run_password(settings)
+        login = "log in with your household password"
     try:
-        web = create_app(get_settings())
+        web = create_app(settings)
     except RuntimeError as e:
         console.print(f"[red]{e}[/]")
         raise typer.Exit(1) from None
     if host not in ("127.0.0.1", "localhost"):
         console.print("Serving on the network: use a TLS reverse proxy beyond your home LAN.")
-    console.print(f"Open http://{'localhost' if host == '127.0.0.1' else host}:{port}")
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}"
+    console.print(f"Meal planner is running at [bold]{url}[/] ({login}).")
+    console.print("Press Ctrl+C to stop.")
+    if open_browser:
+        threading.Timer(1.0, webbrowser.open, [url]).start()
     uvicorn.run(web, host=host, port=port, log_level="warning")
+
+
+def _first_run_password(settings: Settings) -> Settings:
+    """Ask for the household password once and keep it in `.env`."""
+    import sys
+
+    from pydantic import SecretStr
+
+    from mealplan.web import launch
+
+    if not sys.stdin.isatty():
+        console.print(
+            f"[red]No household password yet.[/] Run `mealctl serve` in a terminal to choose "
+            f"one, or add {launch.ENV_KEY}=... to .env."
+        )
+        raise typer.Exit(1)
+    console.print("First run: choose a household password for the web app.")
+    while True:
+        password = typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+        try:
+            launch.save_password(Path(".env"), password)
+        except ValueError as e:
+            console.print(f"[yellow]{e}[/]")
+            continue
+        console.print("Saved in .env. Anyone who uses the app needs this password.")
+        return settings.model_copy(update={"web_password": SecretStr(password)})

@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test e2e check evals serve
+.PHONY: install lint typecheck test e2e check evals serve demo
 
 install:
 	uv sync
@@ -19,6 +19,9 @@ e2e:
 
 serve:
 	uv run mealctl serve
+
+demo:
+	uv run mealctl serve --demo
 
 check: lint typecheck test e2e
 

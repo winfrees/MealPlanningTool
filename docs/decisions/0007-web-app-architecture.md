@@ -22,9 +22,16 @@ Python and must stay the only place that writes.
 - **Access.** One household password (`MEALPLAN_WEB_PASSWORD`); the server refuses to start
   without it. Login sets a signed, expiring, HttpOnly, SameSite=Strict cookie (HMAC-SHA256 with
   a secret generated per install and stored beside the database). Failed logins are
-  rate-limited. State-changing requests must send JSON and an `X-Mealplan` header, which a
-  cross-site form cannot. Binds to 127.0.0.1 unless `--host` says otherwise; for a home server,
+  rate-limited. State-changing requests must send an `X-Mealplan` header, which a cross-site
+  form cannot (the PDF upload is the one non-JSON body). Binds to 127.0.0.1 unless `--host` says otherwise; for a home server,
   put it behind a TLS reverse proxy.
+- **First run (UI-8).** The server prepares a new database itself (migrations, catalog, prep
+  components, house meals) and, when no password is set and it runs in a terminal, asks for
+  one and saves it to `.env` (mode 0600). A "Get started" guide replaces the empty week until
+  the library has approved recipes. The PDF import runs on a background thread, one recipe per
+  transaction, so the page can poll its progress and a stopped import keeps what it finished.
+  `--demo` serves the sample library (`data/sample_library.json`, also the golden week's) from
+  `demo.db`, rebuilt on every run, so trying the app never touches household data.
 - **Tests.** API tests run in-process with the FastAPI test client; a Playwright browser test
   drives the real frontend end to end.
 
