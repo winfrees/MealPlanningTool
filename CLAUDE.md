@@ -59,6 +59,12 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
 - `tests/golden/week/`: the golden week (library fixture and expected plan, prep, day cards).
 - `docs/decisions/`: ADRs; add one per notable choice.
 
+## Releases
+
+`.github/workflows/release.yml` publishes a GitHub release after CI passes on each merge to
+`main` (next patch of the `pyproject.toml` series; `scripts/next_version.py`). Bump the
+minor or major version in `pyproject.toml` when a milestone warrants it.
+
 ## Working rules
 
 - One milestone per branch. Name the milestone and requirement IDs in scope at the start.

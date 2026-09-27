@@ -1,0 +1,65 @@
+name: Release
+
+# Publishes a GitHub release after every merge to main, once CI has passed on it.
+# Version: pyproject's MAJOR.MINOR series, next patch each time (scripts/next_version.py).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0 # tags, for the version and release notes
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Skip if this commit is already released
+        id: existing
+        run: |
+          tag="$(git tag --points-at "$SHA" --list 'v*' | head -n 1)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then echo "Already released as $tag"; fi
+
+      - name: Work out the version
+        if: steps.existing.outputs.tag == ''
+        id: version
+        run: |
+          current="$(uv version --short)"
+          next="$(python3 scripts/next_version.py "$current" $(git tag --list 'v*'))"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$next (pyproject $current)"
+
+      - name: Build the wheel and source archive
+        if: steps.existing.outputs.tag == ''
+        run: |
+          uv version --frozen "${{ steps.version.outputs.version }}"
+          uv build
+
+      - name: Publish the release
+        if: steps.existing.outputs.tag == ''
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" dist/* \
+            --target "$SHA" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes
