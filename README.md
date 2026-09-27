@@ -53,3 +53,11 @@ uv run mealctl recipes show core-024 --servings 2
 | M5 | Agentic discovery (web scout, URL import) | |
 | M6 | Vision inventory | |
 | M7 | Retailer cart + MCP server | |
+
+## Releases
+
+Every merge to `main` that passes CI is published as a GitHub release by
+`.github/workflows/release.yml`: the wheel and source archive, with notes generated from the
+merged pull requests. Versions follow `pyproject.toml`'s series: `0.1.0` first, then `0.1.1`,
+`0.1.2`, ... per merge. Change the version in `pyproject.toml` (for example to `0.2.0`) to start
+a new series.
