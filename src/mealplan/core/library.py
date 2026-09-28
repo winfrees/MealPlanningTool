@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from mealplan.core.normalizer import DESCRIPTORS, Catalog
 from mealplan.core.parser import parse_ingredient
 from mealplan.models.enums import Collection, RecipeStatus
-from mealplan.models.schemas import IngredientLine, RecipeDraft
+from mealplan.models.schemas import IngredientLine, RecipeDraft, RecipeEdit
 from mealplan.models.tables import (
     Ingredient,
     Rating,
@@ -123,6 +123,39 @@ def create_draft(
         for i, s in enumerate(draft.steps, 1)
     ]
     session.add(recipe)
+    session.flush()
+    return recipe
+
+
+def edit_recipe(session: Session, recipe: Recipe, edit: RecipeEdit, catalog: Catalog) -> Recipe:
+    """A person's edit (UI-5): replace the fields, ingredients and steps. Ingredient lines are
+    parsed and matched again; sources, ratings, family and status are kept."""
+    recipe.title = edit.title
+    recipe.servings = edit.servings
+    recipe.prep_minutes = edit.prep_minutes
+    recipe.cook_minutes = edit.cook_minutes
+    recipe.total_minutes = edit.total_minutes
+    recipe.meal_role = edit.meal_role
+    recipe.tags = sorted({t.strip() for t in edit.tags if t.strip()})
+    recipe.household_notes = edit.household_notes
+    recipe.ingredients.clear()
+    recipe.steps.clear()
+    session.flush()
+    lines = [line.strip() for line in edit.ingredients if line.strip()]
+    recipe.ingredients = [
+        _ingredient_row(session, catalog, IngredientLine(raw_text=line), i)
+        for i, line in enumerate(lines, 1)
+    ]
+    recipe.steps = [
+        Step(
+            position=i,
+            text=s.text,
+            equipment=[e.strip() for e in s.equipment if e.strip()],
+            active_minutes=s.active_minutes,
+            passive_minutes=s.passive_minutes,
+        )
+        for i, s in enumerate(edit.steps, 1)
+    ]
     session.flush()
     return recipe
 

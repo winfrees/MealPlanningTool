@@ -34,7 +34,10 @@ make check                     # lint, typecheck, tests (browser tests need Chro
 
 ## Importing the core collection from the terminal
 
-The web app's **Get started** page does this too. From the terminal, put
+The web app's **Get started** page does this too, and without an API key it can prepare batches
+for a Claude chat instead (`mealctl import chat-batches` / `mealctl import chat`), or read the
+scans with a local model through Ollama and Docling (`uv sync --extra local`, then
+`mealctl import pdf ... --engine local`; see the [user guide](docs/user-guide.md)). From the terminal, put
 `Recipes_12Sept26.pdf` in `data/source/` (git-ignored), then:
 
 ```sh

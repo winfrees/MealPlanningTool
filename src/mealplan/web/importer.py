@@ -51,6 +51,7 @@ class ImportStatus:
     failed: int = 0
     message: str = ""
     uses_agent: bool = False
+    reader: str = ""  # who reads the pages the free parser can't
 
 
 class ImportJob:
@@ -84,7 +85,10 @@ class ImportJob:
                 raise ImportRefused("an import is already running")
             extractor = self.extractor()
             self._status = ImportStatus(
-                state="running", total=len(self.manifest.recipes), uses_agent=extractor is not None
+                state="running",
+                total=len(self.manifest.recipes),
+                uses_agent=extractor is not None,
+                reader=getattr(extractor, "label", "") if extractor is not None else "",
             )
         self._thread = threading.Thread(target=self._run, args=(pdf, extractor), daemon=True)
         self._thread.start()
@@ -125,6 +129,8 @@ class ImportJob:
             self._update(state="stopped", message=f"{e}. Recipes imported so far are kept.")
             return
         except Exception as e:  # keep the server up; show the reason on the page
-            self._update(state="stopped", message=f"Import stopped: {e}")
+            self._update(
+                state="stopped", message=f"Import stopped: {e}. Recipes imported so far are kept."
+            )
             return
         self._update(state="done")

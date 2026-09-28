@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
     "anthropic>=0.70",
+    "httpx>=0.27",
     "fastapi>=0.115",
     "pint>=0.24",
     "pydantic>=2.7",
@@ -17,6 +18,10 @@ dependencies = [
     "typer>=0.12",
     "uvicorn>=0.30",
 ]
+
+[project.optional-dependencies]
+# Local PDF reading with Docling (OCR and layout) for the Ollama extractor; large (PyTorch).
+local = ["docling>=2.50"]
 
 [project.scripts]
 mealctl = "mealplan.cli:app"
@@ -55,8 +60,12 @@ files = ["src", "tests", "scripts"]
 mypy_path = "scripts"
 
 [[tool.mypy.overrides]]
-module = ["mealplan.ingest.pdf", "mealplan.web.importer", "mealplan.core.render_list", "tests.test_pdf_import", "tests.test_shopping"]
+module = ["mealplan.ingest.pdf", "mealplan.ingest.chat_import", "mealplan.web.importer", "mealplan.core.render_list", "tests.test_pdf_import", "tests.test_shopping"]
 disallow_untyped_calls = false  # pymupdf ships without type hints
+
+[[tool.mypy.overrides]]
+module = ["docling.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]
@@ -65,7 +74,10 @@ disallow_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
-markers = ["e2e: browser tests of the web app (need Chromium)"]
+markers = [
+    "e2e: browser tests (Playwright + Chromium)",
+    "local: needs the local extra (Docling) and its downloaded models",
+]
 
 [tool.coverage.run]
 source = ["mealplan"]

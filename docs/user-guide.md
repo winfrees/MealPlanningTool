@@ -11,9 +11,54 @@ uv run mealctl serve --host 0.0.0.0  # reachable from phones on the home network
 The first run asks you to choose a household password (it is kept in `.env`). A new install
 opens on **Get started**: import `Recipes_12Sept26.pdf` from the browser, approve the recipes
 that look fine, and plan the week. Web-print pages import for free; scanned and photographed
-pages need Claude, so put `ANTHROPIC_API_KEY=...` in `.env`, restart, and import again to add
-them (recipes already imported are skipped). The demo uses its own `demo.db` and never touches
-your recipes.
+pages need Claude: paste an API key from console.anthropic.com (it starts with `sk-ant-`) into
+the **Claude** box on Get started (or **Setup** later), which checks it and saves it in `.env`,
+then import again (recipes already imported are skipped). In `.env` the key can be written as
+`ANTHROPIC_API_KEY=...` or `MEALPLAN_ANTHROPIC_API_KEY=...`; no model name is needed. The
+demo uses its own `demo.db` and never touches your recipes.
+
+### A local model instead (Ollama + Docling)
+
+Scanned pages can also be read on this computer, free and private:
+
+1. Install Ollama from ollama.com and pull a model: `ollama pull qwen2.5:7b` (about 5 GB; any
+   model that follows JSON well works, set `MEALPLAN_OLLAMA_MODEL=...` in `.env`).
+2. Install Docling, which does the OCR and page layout: `uv sync --extra local` (large: it
+   brings PyTorch). The first import downloads its OCR and layout models once.
+3. Check it: `uv run mealctl local`, or **Check local model** on the Setup page.
+4. Choose **Local model (Ollama)** as the reader on Setup (or leave it on **Automatic**, which
+   uses the local model when no Claude key is saved), then import.
+
+Each scanned page is read by Docling, then the model writes the recipe as JSON, and every
+ingredient line is checked against what Docling read, with one retry, just like Claude. On a
+CPU expect a minute or more per recipe; the import runs in the background with progress.
+From the terminal: `mealctl import pdf data/source/Recipes_12Sept26.pdf --engine local`.
+For a vision model (for example `qwen2.5vl:7b`) set `MEALPLAN_OLLAMA_VISION=true` so the
+page images are sent too.
+
+### No API key: import with a Claude chat
+
+Under **Use a Claude chat instead** (Get started, or **Setup** later) the recipes still missing
+are split into batches of about ten pages. For each batch:
+
+1. **Download PDF** (just that batch's pages) and **Copy prompt**.
+2. In a new chat at claude.ai, attach the PDF, paste the prompt and send.
+3. Copy Claude's whole reply, paste it into **Claude's reply**, and press **Check reply**. The
+   check lists each recipe it found and anything wrong (an unknown id, no ingredients).
+4. **Import**. The recipes land in **Review** as drafts tagged `claude-chat`, with the page
+   they came from. Batches you have finished drop off the list.
+
+From the terminal: `mealctl import chat-batches data/source/Recipes_12Sept26.pdf` writes the
+batch PDFs and prompts to `chat-batches/`; save each reply to a file and run
+`mealctl import chat reply.txt` (add `--dry-run` to check first).
+
+### Fixing a recipe
+
+**Edit** (on a Review card or a recipe page) opens the editor: title, servings, meal, times,
+ingredients (one per line, as written), steps with hands-on and waiting minutes and equipment,
+tags and notes. Saving matches the ingredients to the catalog again and lists anything still
+to check, such as an ingredient it does not recognise. Hands-on minutes matter: the planner
+uses them for the weeknight limit and the Sunday prep schedule.
 
 Everything below also works in the browser: **Week** (plan, shuffle, swap, lock, cooked, day
 cards, prep checklist), **Recipes** (search, open, scale, rate, tag), **Review** (approve,

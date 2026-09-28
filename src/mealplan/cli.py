@@ -318,22 +318,36 @@ def import_pdf(
         list[str] | None, typer.Option("--only", help="Manifest ids to import (repeatable).")
     ] = None,
     agent: Annotated[
-        bool, typer.Option("--agent/--no-agent", help="Use the Claude extraction agent.")
+        bool,
+        typer.Option(
+            "--agent/--no-agent", help="--no-agent: web prints only (same as --engine none)."
+        ),
     ] = True,
+    engine: Annotated[
+        str | None,
+        typer.Option(
+            help="Who reads the other pages: auto (Claude if a key is set, else a local "
+            "model), claude, local (Ollama + Docling), or none. Default: MEALPLAN_EXTRACTOR."
+        ),
+    ] = None,
 ) -> None:
-    """Import the core collection into the review queue: web prints first, then the agent."""
-    from mealplan.agents.extractor import ClaudeExtractor
+    """Import the core collection into the review queue: web prints first, then an extractor."""
+    from mealplan.agents import choose
+    from mealplan.agents.extractor import AccountError
 
     settings = get_settings()
     manifest_data = load_manifest(manifest or settings.data_dir / "core_recipe_manifest.json")
-    extractor = None
-    if agent:
-        import anthropic
-
-        key = settings.anthropic_api_key
-        extractor = ClaudeExtractor(
-            anthropic.Anthropic(api_key=key.get_secret_value()) if key else anthropic.Anthropic()
-        )
+    choice = "none" if not agent else (engine or settings.extractor)
+    if choice not in choose.ENGINE_CHOICES:
+        console.print(f"[red]--engine must be one of {', '.join(choose.ENGINE_CHOICES)}[/]")
+        raise typer.Exit(1)
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+    picked = choose.pick_engine(choice, bool(key), lambda: choose.local_ready(settings))
+    if choice == "claude" and picked is None:
+        console.print("[red]--engine claude needs an API key (MEALPLAN_ANTHROPIC_API_KEY).[/]")
+        raise typer.Exit(1)
+    extractor = choose.make_extractor(picked, settings, key)
+    console.print(f"Other pages read by: {getattr(extractor, 'label', 'nobody (web prints only)')}")
     with _session() as s:
         catalog = _catalog(s)
         try:
@@ -349,6 +363,9 @@ def import_pdf(
         except BudgetExceeded as e:
             console.print(f"[yellow]{e}[/] Recipes imported so far are kept.")
             return
+        except AccountError as e:
+            console.print(f"[red]Import stopped: {e}.[/]")
+            raise typer.Exit(1) from None
     console.print(f"Created {len(report.created)} drafts: {' '.join(report.created)}")
     if report.skipped:
         console.print(f"Already in the library: {len(report.skipped)}")
@@ -357,6 +374,79 @@ def import_pdf(
     if report.failed:
         console.print(f"[red]Failed[/] (see `mealctl import failures`): {' '.join(report.failed)}")
     console.print(f"Agent cost this run: ${report.cost_usd:.2f}")
+
+
+@app.command("local")
+def local_check() -> None:
+    """Check the local reader: Ollama running, the model pulled, Docling installed."""
+    from mealplan.agents.local_extractor import check_local
+
+    settings = get_settings()
+    status = check_local(settings.ollama_model, settings.ollama_url)
+    mark = {True: "[green]yes[/]", False: "[red]no[/]"}
+    console.print(f"Ollama at {settings.ollama_url}: {mark[status.ollama]}")
+    console.print(f"Model {settings.ollama_model}: {mark[status.model]}")
+    console.print(f"Docling installed: {mark[status.docling]}")
+    if status.models:
+        console.print(f"Models available: {', '.join(status.models)}")
+    console.print(status.message)
+    if not status.ready:
+        raise typer.Exit(1)
+
+
+@import_app.command("chat-batches")
+def import_chat_batches(
+    pdf: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Source PDF.")],
+    out: Annotated[Path, typer.Option(help="Folder for the batch PDFs and prompts.")] = Path(
+        "chat-batches"
+    ),
+) -> None:
+    """Write a small PDF and a prompt per batch of missing recipes, for a Claude chat."""
+    from mealplan.ingest import chat_import
+
+    manifest = load_manifest(get_settings().data_dir / "core_recipe_manifest.json")
+    with _session() as s:
+        pending = chat_import.pending_batches(s, manifest)
+    if not pending:
+        console.print("Every recipe in the collection is in the library.")
+        return
+    out.mkdir(parents=True, exist_ok=True)
+    for batch in pending:
+        (out / batch.file_name()).write_bytes(chat_import.batch_pdf(pdf, batch))
+        prompt_file = out / batch.file_name().replace(".pdf", "-prompt.txt")
+        prompt_file.write_text(chat_import.prompt(batch), encoding="utf-8")
+        console.print(f"{batch.file_name()}: {', '.join(e.id for e in batch.entries)}")
+    console.print(
+        f"Attach each PDF in a claude.ai chat with its prompt, save the reply to a file, "
+        f"then run `mealctl import chat REPLY_FILE`. Files are in {out}/."
+    )
+
+
+@import_app.command("chat")
+def import_chat(
+    reply: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Claude's reply.")],
+    dry_run: Annotated[bool, typer.Option(help="Only show what would be imported.")] = False,
+) -> None:
+    """Import recipes from a Claude chat reply (the JSON from a chat-batches prompt)."""
+    from mealplan.ingest import chat_import
+
+    manifest = load_manifest(get_settings().data_dir / "core_recipe_manifest.json")
+    text = reply.read_text(encoding="utf-8")
+    with _session() as s:
+        try:
+            if dry_run:
+                items = chat_import.preview(s, manifest, text)
+            else:
+                items = chat_import.import_reply(s, manifest, _catalog(s), text)
+        except chat_import.ChatImportError as e:
+            console.print(f"[red]{e}[/]")
+            raise typer.Exit(1) from None
+    for item in items:
+        problems = f" ({'; '.join(item.problems)})" if item.problems else ""
+        console.print(f"{item.status:8} {item.id} {item.title}{problems}", highlight=False)
+    created = sum(i.status == "created" for i in items)
+    if not dry_run:
+        console.print(f"Created {created} drafts; see `mealctl review list`.")
 
 
 @import_app.command("failures")

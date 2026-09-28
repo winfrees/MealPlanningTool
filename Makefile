@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test e2e check evals serve demo
+.PHONY: install lint typecheck test e2e local-test check evals serve demo
 
 install:
 	uv sync
@@ -11,7 +11,11 @@ typecheck:
 	uv run mypy
 
 test:
-	uv run pytest -m "not e2e" --cov
+	uv run pytest -m "not e2e and not local" --cov
+
+# Real Docling OCR (needs `uv sync --extra local`; the first run downloads its models).
+local-test:
+	uv run pytest -m local
 
 # Browser tests of the web app (needs Chromium: `uv run playwright install chromium`).
 e2e:

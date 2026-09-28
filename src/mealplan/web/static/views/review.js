@@ -22,6 +22,7 @@ function Draft({ item, onDone }) {
             <button class="secondary small" onClick=${() => act(`${base}/merge`, { into: m.ref }, `merged into ${m.ref}`)}>Same recipe: merge</button></li>`)}
         </ul>` : null}
       <div class="actions">
+        <a class="button secondary" href=${`#/edit/${encodeURIComponent(item.ref)}`}>Edit</a>
         <button onClick=${() => act(`${base}/approve`, undefined, "approved")}>Approve</button>
         <button class="danger" onClick=${() => act(`${base}/reject`, undefined, "rejected")}>Reject</button>
       </div>

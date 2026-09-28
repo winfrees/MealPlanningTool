@@ -5,6 +5,8 @@ import { RecipesView, RecipeView } from "./views/recipes.js";
 import { ReviewView } from "./views/review.js";
 import { ShopView } from "./views/shop.js";
 import { InventoryView } from "./views/inventory.js";
+import { StartView } from "./views/start.js";
+import { EditView } from "./views/edit.js";
 
 const TABS = [
   ["#/week", "Week"],
@@ -58,6 +60,8 @@ function route(hash) {
     case "review": return html`<${ReviewView} />`;
     case "shop": return html`<${ShopView} />`;
     case "inventory": return html`<${InventoryView} />`;
+    case "start": return html`<${StartView} />`;
+    case "edit": return html`<${EditView} key=${arg} ref_=${decodeURIComponent(arg || "")} />`;
     default: return html`<${WeekView} />`;
   }
 }
@@ -84,6 +88,7 @@ function App() {
         ${TABS.map(([href, label]) => html`
           <a href=${href} class=${active === href ? "active" : ""}
              aria-current=${active === href ? "page" : undefined}>${label}</a>`)}
+        <a href="#/start" class=${active === "#/start" ? "active" : ""} title="Import recipes and settings">Setup</a>
         <button class="link" onClick=${logout}>Log out</button>
       </nav>
     </header>

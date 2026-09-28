@@ -3,12 +3,12 @@
 Handlers are thin: each calls the same core function as the matching CLI command.
 """
 
-import os
 from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
+import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +17,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mealplan import db
+from mealplan.agents import choose, credentials
 from mealplan.agents.extractor import RecipeExtractor
+from mealplan.agents.local_extractor import LocalStatus, check_local
 from mealplan.config import Settings
 from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts, setup
 from mealplan.core.base_week import rotation
@@ -38,11 +40,13 @@ from mealplan.core.render_list import (
 from mealplan.core.scaling import scale_quantity
 from mealplan.core.shopping import ListLine
 from mealplan.core.units import format_qty
-from mealplan.ingest import review_queue
-from mealplan.models.enums import Location, Meal, RecipeStatus
+from mealplan.ingest import chat_import, review_queue
+from mealplan.ingest.chat_import import ChatImportError
+from mealplan.models.enums import Location, Meal, MealRole, RecipeStatus
 from mealplan.models.manifest import load_manifest
+from mealplan.models.schemas import RecipeEdit
 from mealplan.models.tables import Ingredient, Rating, Recipe
-from mealplan.web import auth
+from mealplan.web import auth, launch
 from mealplan.web.importer import ImportJob, ImportRefused, check_pdf
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -60,6 +64,18 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
 # --- request bodies ---------------------------------------------------------------------------
+
+
+class ApiKeyBody(BaseModel):
+    key: str = Field(max_length=500)
+
+
+class ReaderBody(BaseModel):
+    choice: Literal["auto", "claude", "local", "none"]
+
+
+class ChatReplyBody(BaseModel):
+    reply: str = Field(max_length=chat_import.MAX_REPLY_CHARS)
 
 
 class LoginBody(BaseModel):
@@ -213,28 +229,21 @@ def _shortfalls(short: list[Shortfall]) -> list[str]:
 # --- the app ----------------------------------------------------------------------------------
 
 
-def default_extractor(settings: Settings) -> Callable[[], RecipeExtractor | None]:
-    """The Claude extractor when an API key is configured; otherwise web prints only."""
+def claude_client(key: str) -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=key)
 
-    def make() -> RecipeExtractor | None:
-        key = settings.anthropic_api_key
-        if key is None and not os.environ.get("ANTHROPIC_API_KEY"):
-            return None
-        import anthropic
 
-        from mealplan.agents.extractor import ClaudeExtractor
-
-        if key is None:
-            return ClaudeExtractor(anthropic.Anthropic())
-        return ClaudeExtractor(anthropic.Anthropic(api_key=key.get_secret_value()))
-
-    return make
+def check_claude_key(key: str) -> None:
+    credentials.check_key(claude_client(key))
 
 
 def create_app(
     settings: Settings,
     today: Callable[[], date] = date.today,
     extractor: Callable[[], RecipeExtractor | None] | None = None,
+    key_checker: Callable[[str], None] = check_claude_key,
+    env_file: Path = Path(".env"),
+    local_checker: Callable[[], LocalStatus] | None = None,
 ) -> FastAPI:
     if settings.web_password is None or not settings.web_password.get_secret_value():
         raise RuntimeError("set MEALPLAN_WEB_PASSWORD before starting the web app")
@@ -245,8 +254,28 @@ def create_app(
         setup.prepare(s, settings.data_dir)
     manifest = load_manifest(settings.data_dir / "core_recipe_manifest.json")
     source_pdf = settings.data_dir / "source" / manifest.source_pdf
+    # The Anthropic API key: from settings, the environment, or pasted on Get started (UI-8).
+    configured = settings.anthropic_api_key
+    api_key = {"value": configured.get_secret_value() if configured else None}
+
+    # Who reads the pages the free parser can't: Claude, a local model, or none (ING-1).
+    reader_choice = {"value": settings.extractor}
+
+    def local_status() -> LocalStatus:
+        if local_checker is not None:
+            return local_checker()
+        return check_local(settings.ollama_model, settings.ollama_url)
+
+    def current_engine() -> choose.Engine | None:
+        return choose.pick_engine(
+            reader_choice["value"], bool(api_key["value"]), lambda: local_status().ready
+        )
+
+    def current_extractor() -> RecipeExtractor | None:
+        return choose.make_extractor(current_engine(), settings, api_key["value"])
+
     importer = ImportJob(
-        engine, manifest, extractor or default_extractor(settings), settings.agent_weekly_budget_usd
+        engine, manifest, extractor or current_extractor, settings.agent_weekly_budget_usd
     )
     secret = auth.load_secret(settings.web_secret_path)
     limiter = auth.LoginLimiter()
@@ -278,6 +307,8 @@ def create_app(
     S = Annotated[Session, Depends(session)]
 
     for error, status in (
+        (ChatImportError, 400),
+        (credentials.KeyProblem, 400),
         (ImportRefused, 400),
         (LibraryError, 400),
         (PlanError, 400),
@@ -429,6 +460,43 @@ def create_app(
                 }
             )
         return out
+
+    @app.get("/api/recipes/{ref}/edit")
+    def recipe_for_edit(ref: str, s: S) -> dict[str, Any]:
+        r = library.get_recipe(s, ref)
+        return {
+            "ref": r.ref,
+            "status": r.status.value,
+            "title": r.title,
+            "servings": r.servings,
+            "prep_minutes": r.prep_minutes,
+            "cook_minutes": r.cook_minutes,
+            "total_minutes": r.total_minutes,
+            "meal_role": r.meal_role.value if r.meal_role else None,
+            "tags": r.tags,
+            "household_notes": r.household_notes,
+            "ingredients": [i.raw_text for i in r.ingredients],
+            "steps": [
+                {
+                    "text": st.text,
+                    "equipment": st.equipment,
+                    "active_minutes": st.active_minutes,
+                    "passive_minutes": st.passive_minutes,
+                }
+                for st in r.steps
+            ],
+            "sources": [
+                {"title": x.title, "file": x.file, "pages": x.pages, "confidence": x.confidence}
+                for x in r.sources
+            ],
+            "roles": [m.value for m in MealRole],
+            "issues": review_queue.issues(r),
+        }
+
+    @app.put("/api/recipes/{ref}")
+    def save_recipe(ref: str, body: RecipeEdit, s: S) -> dict[str, Any]:
+        r = library.edit_recipe(s, library.get_recipe(s, ref), body, Catalog.from_db(s))
+        return {"ref": r.ref, "issues": review_queue.issues(r)}
 
     @app.get("/api/recipes/{ref}")
     def recipe(
@@ -655,7 +723,51 @@ def create_app(
             "pdf_name": manifest.source_pdf,
             "pdf_on_disk": source_pdf.exists(),
             "import": importer.status(),
+            "api_key": key_status(),
+            "reader": {"choice": reader_choice["value"], "local_model": settings.ollama_model},
         }
+
+    @app.get("/api/setup/local")
+    def setup_local() -> dict[str, Any]:
+        """Probe Ollama and Docling (a second or so), and say which reader an import would use."""
+        status = local_status()
+        return {
+            "ollama": status.ollama,
+            "model": status.model,
+            "docling": status.docling,
+            "ready": status.ready,
+            "models": list(status.models),
+            "message": status.message,
+            "local_model": settings.ollama_model,
+            "url": settings.ollama_url,
+            "engine": current_engine(),
+        }
+
+    @app.post("/api/setup/reader")
+    def set_reader(body: ReaderBody) -> dict[str, Any]:
+        launch.save_env_value(env_file, "MEALPLAN_EXTRACTOR", body.choice)
+        reader_choice["value"] = body.choice
+        return {"choice": body.choice}
+
+    def key_status() -> dict[str, Any]:
+        key = api_key["value"]
+        return {"set": bool(key), "ends_with": key[-4:] if key else None}
+
+    @app.post("/api/setup/api-key")
+    def save_api_key(body: ApiKeyBody) -> dict[str, Any]:
+        """Check a pasted key, then keep it in `.env` and use it from now on."""
+        key = credentials.clean_key(body.key)
+        key_checker(key)
+        launch.save_env_value(env_file, credentials.NAMES[0], key, replaces=credentials.NAMES[1:])
+        api_key["value"] = key
+        return key_status()
+
+    @app.post("/api/setup/api-key/check")
+    def check_api_key() -> dict[str, Any]:
+        if not api_key["value"]:
+            raise credentials.KeyProblem("no API key yet; paste one first")
+        key_checker(api_key["value"])
+        return {**key_status(), "ok": True}
 
     @app.post("/api/setup/import")
     def import_saved_pdf() -> dict[str, Any]:
@@ -692,6 +804,68 @@ def create_app(
         partial.replace(source_pdf)
         importer.start(source_pdf)
         return importer.status()
+
+    # --- Claude chat import (no API key) ---
+
+    def chat_batch(s: Session, number: int) -> chat_import.Batch:
+        for b in chat_import.pending_batches(s, manifest):
+            if b.number == number:
+                return b
+        raise HTTPException(404, f"batch {number} has nothing left to import")
+
+    @app.get("/api/chat-import")
+    def chat_batches(s: S) -> dict[str, Any]:
+        pending = chat_import.pending_batches(s, manifest)
+        return {
+            "pdf_on_disk": source_pdf.exists(),
+            "pdf_name": manifest.source_pdf,
+            "missing": sum(len(b.entries) for b in pending),
+            "batches": [
+                {
+                    "number": b.number,
+                    "file": b.file_name(),
+                    "pages": len(b.pages),
+                    "recipes": [{"id": e.id, "title": e.title} for e in b.entries],
+                }
+                for b in pending
+            ],
+        }
+
+    @app.get("/api/chat-import/{number}/prompt")
+    def chat_prompt(number: int, s: S) -> dict[str, str]:
+        return {"prompt": chat_import.prompt(chat_batch(s, number))}
+
+    @app.get("/api/chat-import/{number}/pdf")
+    def chat_pdf(number: int, s: S) -> Response:
+        if not source_pdf.exists():
+            raise HTTPException(404, f"upload {manifest.source_pdf} first (Get started, step 1)")
+        batch = chat_batch(s, number)
+        return Response(
+            chat_import.batch_pdf(source_pdf, batch),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{batch.file_name()}"'},
+        )
+
+    def items_json(items: list[chat_import.PreviewItem]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": i.id,
+                "title": i.title,
+                "status": i.status,
+                "ingredients": i.ingredients,
+                "steps": i.steps,
+                "problems": i.problems,
+            }
+            for i in items
+        ]
+
+    @app.post("/api/chat-import/preview")
+    def chat_preview(body: ChatReplyBody, s: S) -> list[dict[str, Any]]:
+        return items_json(chat_import.preview(s, manifest, body.reply))
+
+    @app.post("/api/chat-import")
+    def chat_import_reply(body: ChatReplyBody, s: S) -> list[dict[str, Any]]:
+        return items_json(chat_import.import_reply(s, manifest, Catalog.from_db(s), body.reply))
 
     # --- frontend ---
 
