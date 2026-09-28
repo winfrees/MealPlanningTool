@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Chicken Grain Bowls with Lemon Tahini",
+    "servings": 4.0,
+    "prep_minutes": 20,
+    "cook_minutes": 25,
+    "total_minutes": null,
+    "ingredients": [
+      "1 1/2 cups farro",
+      "1 1/2 lb boneless skinless chicken thighs",
+      "2 cups cherry tomatoes, halved",
+      "1 cucumber, chopped",
+      "1/4 cup tahini",
+      "2 tablespoons lemon juice"
+    ],
+    "steps": [
+      "Simmer the farro in salted water until tender, 25 minutes.",
+      "Roast the chicken at 425F for 20 minutes, then slice.",
+      "Whisk tahini with lemon juice and water; divide everything among 4 containers."
+    ],
+    "categories": [
+      "Lunch",
+      "Main Course"
+    ],
+    "cuisines": [],
+    "keywords": [],
+    "author": "Sam Lee",
+    "site_name": "Weeknight Kitchen"
+  }
+]

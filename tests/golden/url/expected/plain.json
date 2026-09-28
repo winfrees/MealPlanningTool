@@ -1,0 +1,35 @@
+[
+  {
+    "title": "Red Lentil Soup",
+    "servings": 4.0,
+    "prep_minutes": 10,
+    "cook_minutes": 30,
+    "total_minutes": 40,
+    "ingredients": [
+      "1 cup red lentils, rinsed",
+      "1 onion, diced",
+      "2 carrots, diced",
+      "6 cups vegetable broth",
+      "1 teaspoon ground cumin",
+      "juice of 1 lemon"
+    ],
+    "steps": [
+      "Soften the onion and carrots in a large pot, about 8 minutes.",
+      "Add the lentils, broth and cumin; simmer 25 minutes.",
+      "Blend until smooth and finish with lemon juice."
+    ],
+    "categories": [
+      "Soup"
+    ],
+    "cuisines": [
+      "Turkish"
+    ],
+    "keywords": [
+      "lentils",
+      "soup",
+      "make ahead"
+    ],
+    "author": "Ana Silva",
+    "site_name": "Good Bowls"
+  }
+]

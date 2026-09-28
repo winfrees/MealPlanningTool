@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Beef & Bean Chili",
+    "servings": 6.0,
+    "prep_minutes": 15,
+    "cook_minutes": 75,
+    "total_minutes": 90,
+    "ingredients": [
+      "2 lb ground beef",
+      "1 large onion, chopped",
+      "2 (15-ounce) cans kidney beans, drained & rinsed",
+      "1 (28-ounce) can crushed tomatoes",
+      "2 tablespoons chili powder",
+      "1 teaspoon ground cumin"
+    ],
+    "steps": [
+      "Brown the beef with the onion, breaking it up, 10 minutes.",
+      "Stir in the spices, tomatoes and beans.",
+      "Simmer, partly covered, for 1 hour."
+    ],
+    "categories": [],
+    "cuisines": [],
+    "keywords": [],
+    "author": "",
+    "site_name": "The Batch Cook"
+  }
+]

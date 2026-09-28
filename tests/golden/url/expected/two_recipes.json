@@ -1,0 +1,40 @@
+[
+  {
+    "title": "Lemon Vinaigrette",
+    "servings": 8.0,
+    "prep_minutes": null,
+    "cook_minutes": null,
+    "total_minutes": null,
+    "ingredients": [
+      "1/4 cup lemon juice",
+      "1/2 cup olive oil"
+    ],
+    "steps": [
+      "Shake together in a jar."
+    ],
+    "categories": [],
+    "cuisines": [],
+    "keywords": [],
+    "author": "",
+    "site_name": ""
+  },
+  {
+    "title": "Green Goddess",
+    "servings": null,
+    "prep_minutes": null,
+    "cook_minutes": null,
+    "total_minutes": null,
+    "ingredients": [
+      "1 cup plain yogurt",
+      "1 cup herbs"
+    ],
+    "steps": [
+      "Blend until smooth."
+    ],
+    "categories": [],
+    "cuisines": [],
+    "keywords": [],
+    "author": "",
+    "site_name": ""
+  }
+]
