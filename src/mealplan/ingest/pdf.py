@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mealplan.agents.extractor import (
+    CallRecord,
     ExtractedRecipe,
     ExtractionRequest,
     ExtractionResult,
@@ -82,10 +83,15 @@ def spent_since(session: Session, since: datetime) -> float:
 
 
 def _log_calls(session: Session, result: ExtractionResult) -> float:
-    for call in result.calls:
+    return log_calls(session, result.calls, AGENT_NAME)
+
+
+def log_calls(session: Session, calls: list[CallRecord], agent: str) -> float:
+    """NFR-7: one AgentCall row per model call. Returns their cost."""
+    for call in calls:
         session.add(
             AgentCall(
-                agent=AGENT_NAME,
+                agent=agent,
                 model=call.model,
                 input_tokens=call.input_tokens,
                 output_tokens=call.output_tokens,
@@ -94,7 +100,7 @@ def _log_calls(session: Session, result: ExtractionResult) -> float:
                 cost_usd=call.cost_usd,
             )
         )
-    return sum(c.cost_usd for c in result.calls)
+    return sum(c.cost_usd for c in calls)
 
 
 def _best_match(recipes: list[ExtractedRecipe], title: str) -> ExtractedRecipe:

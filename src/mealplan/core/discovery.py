@@ -17,17 +17,21 @@ here.
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from mealplan.agents.scout import AGENT_NAME as SCOUT_AGENT
+from mealplan.agents.scout import RecipeScout
 from mealplan.core import library, recipe_facts
 from mealplan.core.normalizer import Catalog
 from mealplan.core.parser import parse_ingredient
 from mealplan.core.preferences import HouseholdPrefs
 from mealplan.core.recipe_facts import Dish, DishIngredient, StepTime
 from mealplan.ingest.fetch import Fetcher, FetchError, Page, fetch_page
+from mealplan.ingest.pdf import BudgetExceeded, log_calls, spent_since
 from mealplan.ingest.url import parse_recipes_html, to_draft
 from mealplan.models.enums import Collection, MealRole
 from mealplan.models.schemas import RecipeDraft
@@ -209,3 +213,56 @@ def add_candidate(
             library.add_to_family(session, target, name)
         library.add_to_family(session, recipe, name)
     return recipe
+
+
+# --- the scout (agent proposes, core disposes) ---------------------------------------------------
+
+LIBRARY_SEARCH_LIMIT = 8
+
+
+def library_search(session: Session, query: str) -> str:
+    """The scout's read-only view of the library: recipes whose title or ingredients share a
+    word with the query, best first."""
+    words = library.title_tokens(query) or frozenset(query.lower().split())
+    scored = []
+    for r in session.scalars(select(Recipe).order_by(Recipe.ref)):
+        names = " ".join(i.ingredient.canonical_name for i in r.ingredients if i.ingredient)
+        title_hits = len(words & library.title_tokens(r.title))
+        ingredient_hits = sum(1 for w in words if w in names)
+        if title_hits or ingredient_hits:
+            scored.append((-(2 * title_hits + ingredient_hits), r.ref, r))
+    if not scored:
+        return "no matches"
+    lines = []
+    for _, _, r in sorted(scored)[:LIBRARY_SEARCH_LIMIT]:
+        role = r.meal_role.value if r.meal_role else "recipe"
+        lines.append(f"{r.ref}: {r.title} ({role}, {r.collection.value})")
+    return "\n".join(lines)
+
+
+def scout_candidates(
+    session: Session,
+    prefs: HouseholdPrefs,
+    catalog: Catalog,
+    scout: RecipeScout,
+    request_text: str,
+    role: MealRole | None = None,
+    fetcher: Fetcher = fetch_page,
+    weekly_budget_usd: float = 10.0,
+    now: datetime | None = None,
+) -> list[Candidate]:
+    """Ask the scout for links, log its calls (NFR-7), then check every link like a pasted one."""
+    now = now or datetime.now(UTC).replace(tzinfo=None)
+    if spent_since(session, now - timedelta(days=7)) >= weekly_budget_usd:
+        raise BudgetExceeded(f"weekly agent budget of ${weekly_budget_usd:.2f} reached")
+    result = scout.scout(request_text, lambda q: library_search(session, q))
+    log_calls(session, result.calls, SCOUT_AGENT)
+    session.flush()
+    if result.failure is not None:
+        raise DiscoveryError(
+            f"the scout could not finish ({result.failure.stage}): {result.failure.error[:300]}"
+        )
+    notes = {s.url: s.reason for s in result.suggestions}
+    return check_urls(
+        session, prefs, catalog, [s.url for s in result.suggestions], fetcher, role, notes
+    )
