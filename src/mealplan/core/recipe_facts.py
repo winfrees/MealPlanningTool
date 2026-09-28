@@ -8,9 +8,13 @@ database. Every derived fact can be overridden by a tag, so the reviewer has the
 import re
 from dataclasses import dataclass
 from datetime import date
+from typing import TYPE_CHECKING
 
 from mealplan.core.units import UNITS, ConversionError, Dimension, convert
 from mealplan.models.enums import Collection, MealRole
+
+if TYPE_CHECKING:
+    from mealplan.core.preferences import HouseholdPrefs
 
 
 @dataclass(frozen=True)
@@ -175,6 +179,29 @@ def spice_level(dish: Dish) -> int:
         amount = _per_serving(ing, unit, servings)
         level = max(level, base + (1 if amount is not None and amount >= hot_amount else 0))
     return min(level, 3)
+
+
+# --- household rules ------------------------------------------------------------------------
+
+
+def violations(dish: Dish, prefs: "HouseholdPrefs") -> list[str]:
+    """Why a dish breaks the household's hard rules (avoided tags and ingredients, spice), in
+    words; empty when it is allowed. The planner and discovery share this one check, and an
+    agent's own claims about a recipe are never trusted instead of it (§5)."""
+    found = [f"tagged {t}" for t in sorted(dish.tags & set(prefs.avoid_tags))]
+    avoid = [a.lower() for a in prefs.avoid_ingredients]
+    for ing in dish.ingredients:
+        name = ing.name.lower()
+        # Matched lines compare canonical names; unmatched raw lines are searched for the word.
+        hits = [a for a in avoid if a == name or (not ing.matched and a in name)]
+        for hit in hits:
+            reason = f"contains {hit}"
+            if reason not in found:
+                found.append(reason)
+    level = spice_level(dish)
+    if level > prefs.max_spice:
+        found.append(f"too spicy ({level} of 3; the limit is {prefs.max_spice})")
+    return found
 
 
 # --- season ---------------------------------------------------------------------------------

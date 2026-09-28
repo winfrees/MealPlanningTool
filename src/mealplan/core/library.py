@@ -198,6 +198,23 @@ def similar_recipes(session: Session, recipe: Recipe) -> list[Similar]:
     return sorted(found, key=lambda s: (-s.score, s.recipe.ref))
 
 
+def similar_to_draft(
+    session: Session, title: str, ingredient_names: frozenset[str]
+) -> list[Similar]:
+    """`similar_recipes` for a recipe not yet stored (a web find, REC-8): same title and
+    ingredient-set overlap rule, over every recipe in the library, drafts included."""
+    mine_title = title_tokens(title)
+    found = []
+    for other in session.scalars(select(Recipe)):
+        t = _jaccard(mine_title, title_tokens(other.title))
+        theirs = frozenset(i.ingredient.canonical_name for i in other.ingredients if i.ingredient)
+        ing = _jaccard(ingredient_names, theirs) if ingredient_names and theirs else None
+        score = t if ing is None else 0.5 * t + 0.5 * ing
+        if score >= SIMILARITY_THRESHOLD:
+            found.append(Similar(other, round(score, 3), round(t, 3), ing))
+    return sorted(found, key=lambda s: (-s.score, s.recipe.ref))
+
+
 def merge_copy(session: Session, draft: Recipe, into: Recipe) -> Recipe:
     """REC-3: a second copy of the same recipe collapses into one record keeping all page refs.
 

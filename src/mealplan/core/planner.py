@@ -66,11 +66,7 @@ def _label(day: date) -> str:
 
 def _allowed(dish: Dish, prefs: HouseholdPrefs) -> bool:
     """Hard household rules; never relaxed (the deterministic dislike check)."""
-    if dish.tags & set(prefs.avoid_tags):
-        return False
-    if any(i.name in prefs.avoid_ingredients for i in dish.ingredients):
-        return False
-    return recipe_facts.spice_level(dish) <= prefs.max_spice
+    return not recipe_facts.violations(dish, prefs)
 
 
 def _family_representatives(dishes: list[Dish]) -> list[Dish]:
