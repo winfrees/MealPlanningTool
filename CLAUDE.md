@@ -27,6 +27,9 @@ uv run mealctl catalog seed    # load data/ingredients.csv
 uv run mealctl import pdf data/source/Recipes_12Sept26.pdf [--no-agent] [--only core-001]
 uv run mealctl import chat-batches data/source/Recipes_12Sept26.pdf   # then: import chat REPLY
 uv run mealctl local           # check Ollama + Docling; import pdf --engine local uses them
+uv run mealctl import url LINK... [--dry-run]   # web recipes via JSON-LD, no agent (ING-2)
+uv run mealctl discover run --preset soups [--add]   # scout (key); or: discover prompt / chat
+make url-evals                 # M5 acceptance: links in evals/urls.txt import with no agent
 uv run mealctl review list     # then review show / approve / merge / family
 uv run mealctl plan week --start 2026-10-04 [--seed N]   # then plan show / cards / swap / lock
 uv run mealctl prep show       # Sunday prep checklist
@@ -52,15 +55,19 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
   `prep.py`, `render.py` (plan, prep, day cards), `plan_store.py` (DB side of planning),
   `base_week.py` (standing meals, PLN-9; defaults in `preferences.py`), `inventory.py`,
   `shopping.py` (pure list engine; ADR-0006), `render_list.py` (md/text/pdf), `kitchen.py`
-  (DB side of lists, cooking and prep deductions), `setup.py` (first run, demo household).
+  (DB side of lists, cooking and prep deductions), `setup.py` (first run, demo household),
+  `discovery.py` (fetch and check web finds: verdicts, add as discovered draft or variant; M5).
 - `src/mealplan/ingest/`: `pdf.py` (manifest-driven import), `web_print.py` (deterministic
   path), `chat_import.py` (batches and prompts for a Claude chat, reply parsing; ING-5),
+  `url.py` (schema.org Recipe JSON-LD; ING-2), `fetch.py` (public http(s) only, size/time caps),
   `grounding.py`, `review_queue.py`.
 - `src/mealplan/agents/extractor.py`: Claude PDF extractor behind the `RecipeExtractor`
   protocol; tests use fakes, never the API.
 - `src/mealplan/agents/local_extractor.py`: Docling (OCR/layout, optional `local` extra) plus
   an Ollama model behind the same protocol (ING-7; ADR-0008). `choose.py` picks Claude, local
   or none (`MEALPLAN_EXTRACTOR`) for the CLI and the web app.
+- `src/mealplan/agents/scout.py`: web recipe scout (web_search + read-only search_library;
+  proposes URLs only) and the no-key chat prompt / reply parser. ADR-0009.
 - `src/mealplan/agents/credentials.py`: tidy and check the Anthropic API key (read as
   `MEALPLAN_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`; the web Setup page can save it).
 - `src/mealplan/web/`: `app.py` (FastAPI JSON API; thin handlers over the core, same as the
@@ -71,7 +78,8 @@ UPDATE_GOLDEN=1 uv run pytest tests/test_golden_week.py  # regenerate golden fil
 - `data/`: core recipe manifest, ingredient catalog, prep components, `sample_library.json`
   (the demo's recipes and the golden week's library); the source PDF lives in git-ignored
   `data/source/`.
-- `tests/golden/week/`: the golden week's expected plan, prep, day cards and list.
+- `tests/golden/week/`: the golden week's expected plan, prep, day cards and list;
+  `tests/golden/url/`: saved recipe pages and their expected parse.
 - `docs/decisions/`: ADRs; add one per notable choice.
 
 ## Releases
@@ -97,4 +105,7 @@ minor or major version in `pyproject.toml` when a milestone warrants it.
   planned from the approved collection and cooked.
 - **M3 Inventory + shopping list**: code done; golden week's list checked by hand and pinned.
 - **M4 Web app**: code done; API tests and a browser test cover every screen.
-- Next: **M5** agentic discovery (use plan mode first).
+- **M5 Agentic discovery**: code done (URL import, scout, chat path, Discover tab, promotion,
+  evals). Acceptance needs the network: 20 links in `evals/urls.txt` (`make url-evals`) and
+  `evals/run_scout.py` with a key.
+- Next: **M6** vision inventory.

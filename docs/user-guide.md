@@ -66,6 +66,27 @@ reject, merge copies, group variants), **Shop** (tick items off as you go; text 
 downloads) and **Kitchen** (inventory and the staples check). On a home server, put it
 behind a TLS reverse proxy before exposing it beyond the home network.
 
+### Finding new recipes (Discover)
+
+The **Discover** tab finds recipes on the web and checks each one before you see it:
+
+- **Presets**: *Soups for Sunday prep*, *Grain salads & lunch bowls*, *Weeknight dinners*
+  (within your hands-on limit), or type what you want. With an API key saved, Claude searches
+  the web (a minute or two, a few cents); without one, you get a prompt to paste into a claude.ai
+  chat, then paste its reply back.
+- **Add from a link**: paste one or more recipe links; no AI is involved.
+
+Either way the app reads each page itself and labels it: **fits**, **looks familiar** (similar
+to one of yours: add it as another version in that recipe's family, or as its own recipe),
+**breaks a rule** (an ingredient you avoid, or too spicy, with the reason), **already yours**,
+or **couldn't read** (the site doesn't publish recipe data). Added recipes wait in **Review**,
+marked as new finds. The planner uses at most one new dinner a week; rate one 4 or 5 after
+cooking, or press *move it to your recipes*, and it becomes one of your own.
+
+From the terminal: `mealctl import url LINK...`, `mealctl discover run --preset soups [--add]`
+(needs a key), `mealctl discover prompt --preset lunches` and `mealctl discover chat reply.txt`,
+`mealctl recipes promote REF`.
+
 ## From the terminal
 
 Friday to Sunday. Dates default to the coming prep day (Sunday).

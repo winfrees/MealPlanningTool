@@ -38,6 +38,7 @@ from mealplan.models.schemas import RecipeDraft
 from mealplan.models.tables import Recipe, RecipeSource
 
 MAX_FETCH_WORKERS = 4
+VERDICTS = ("ok", "duplicate", "blocked", "exists", "unreadable")
 
 
 @dataclass
@@ -172,14 +173,14 @@ def check_urls(
     prefs: HouseholdPrefs,
     catalog: Catalog,
     urls: list[str],
-    fetcher: Fetcher = fetch_page,
+    fetcher: Fetcher | None = None,
     role: MealRole | None = None,
     notes: dict[str, str] | None = None,
 ) -> list[Candidate]:
     """Fetch and check each URL (duplicates in the list are checked once), in order."""
     unique = list(dict.fromkeys(u.strip() for u in urls if u.strip()))
     known = known_urls(session)
-    pages = fetch_all(unique, fetcher)
+    pages = fetch_all(unique, fetcher or fetch_page)
     out = []
     for url in unique:
         note = (notes or {}).get(url, "")
@@ -247,7 +248,7 @@ def scout_candidates(
     scout: RecipeScout,
     request_text: str,
     role: MealRole | None = None,
-    fetcher: Fetcher = fetch_page,
+    fetcher: Fetcher | None = None,
     weekly_budget_usd: float = 10.0,
     now: datetime | None = None,
 ) -> list[Candidate]:

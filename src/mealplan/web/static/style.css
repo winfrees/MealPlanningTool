@@ -120,3 +120,10 @@ legend { font-weight: 600; padding: 0 4px; }
 .preview li.error { color: var(--error); }
 .reader { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
 .reader h4 { margin: 0 0 4px; }
+
+/* Discover (M5) */
+.candidate h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.candidate.blocked, .candidate.exists, .candidate.unreadable { opacity: 0.8; }
+.badge.ok { background: var(--note-bg); }
+.badge.blocked { color: var(--error); }
+.warn-text { color: var(--warn-fg); }

@@ -7,11 +7,13 @@ import { ShopView } from "./views/shop.js";
 import { InventoryView } from "./views/inventory.js";
 import { StartView } from "./views/start.js";
 import { EditView } from "./views/edit.js";
+import { DiscoverView } from "./views/discover.js";
 
 const TABS = [
   ["#/week", "Week"],
   ["#/recipes", "Recipes"],
   ["#/review", "Review"],
+  ["#/discover", "Discover"],
   ["#/shop", "Shop"],
   ["#/inventory", "Kitchen"],
 ];
@@ -61,6 +63,7 @@ function route(hash) {
     case "shop": return html`<${ShopView} />`;
     case "inventory": return html`<${InventoryView} />`;
     case "start": return html`<${StartView} />`;
+    case "discover": return html`<${DiscoverView} />`;
     case "edit": return html`<${EditView} key=${arg} ref_=${decodeURIComponent(arg || "")} />`;
     default: return html`<${WeekView} />`;
   }

@@ -1,0 +1,6 @@
+# M5 acceptance: "20 URLs import with no agent" (ING-2).
+# Put 20 recipe page links here, one per line, from the sites the household uses (the scout's
+# finds on the Discover page are a good source). Then run:
+#   uv run python evals/run_url_import.py
+# It fetches each page (network, no API key, no AI) and reports whether its structured recipe
+# data parsed. Lines starting with # are ignored.

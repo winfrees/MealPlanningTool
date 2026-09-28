@@ -58,7 +58,7 @@ uv run mealctl recipes show core-024 --servings 2
 | M2 | Planner + prep scheduler | Code done; plan and cook a real week |
 | M3 | Inventory + shopping list | Code done |
 | M4 | Web app: plan, search, review, shop (password-protected) | Code done |
-| M5 | Agentic discovery (web scout, URL import) | |
+| M5 | Agentic discovery (web scout, URL import) | Code done; import 20 real links |
 | M6 | Vision inventory | |
 | M7 | Retailer cart + MCP server | |
 

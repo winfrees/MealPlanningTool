@@ -9,7 +9,9 @@ export function RecipesView() {
   const [role, setRole] = useState("");
   const [tag, setTag] = useState("");
   const [minRating, setMinRating] = useState("");
+  const [collection, setCollection] = useState("");
   const params = new URLSearchParams({ q });
+  if (collection) params.set("collection", collection);
   if (role) params.set("role", role);
   if (tag) params.set("tag", tag);
   if (minRating) params.set("min_rating", minRating);
@@ -27,6 +29,11 @@ export function RecipesView() {
         <option value="">any rating</option>
         ${[3, 4, 5].map((n) => html`<option value=${n}>${n}+ stars</option>`)}
       </select>
+      <select value=${collection} onChange=${(e) => setCollection(e.target.value)} aria-label="Collection">
+        <option value="">all recipes</option>
+        <option value="core">my recipes</option>
+        <option value="discovered">new finds</option>
+      </select>
     </div>
     <${ErrorNote} error=${error} />
     ${loading && !recipes ? html`<${Loading} />` : null}
@@ -35,6 +42,7 @@ export function RecipesView() {
       ${(recipes || []).map((r) => html`
         <li>
           <a href=${`#/recipe/${r.ref}`}>${r.title}</a>
+          ${r.collection === "discovered" ? html` <span class="badge">new</span>` : null}
           <div class="muted small">
             ${[r.role, r.protein, r.active_minutes != null ? `${r.active_minutes} min` : null,
                r.rating != null ? `${"★".repeat(Math.round(r.rating))} ${r.rating}` : null,
@@ -69,6 +77,10 @@ export function RecipeView({ ref_ }) {
       ${recipe.family ? html` · family ${recipe.family}` : null}</p>
     ${recipe.variants.length ? html`<p>Other versions: ${recipe.variants.map((v) => html`<a href=${`#/recipe/${v}`}>${v}</a> `)}</p>` : null}
     ${recipe.notes ? html`<p class="note">${recipe.notes}</p>` : null}
+    ${recipe.collection === "discovered" ? html`
+      <p class="note">A new find from the web. Rate it 4 or 5 after cooking and it joins your
+        recipes; or <button class="link" onClick=${() => post(`/api/recipes/${recipe.ref}/promote`,
+          undefined, "Moved to your recipes.")}>move it to your recipes now</button>.</p>` : null}
     <${ErrorNote} error=${actionError} />
     ${message ? html`<p class="note" role="status">${message}</p>` : null}
 

@@ -13,3 +13,4 @@ requirement IDs it touches.
 | [0006](0006-shopping-list-units-and-packs.md) | Shopping list units, netting, and packs | Accepted |
 | [0007](0007-web-app-architecture.md) | Web app architecture | Accepted |
 | [0008](0008-local-extraction.md) | Local extraction with Docling and Ollama | Accepted |
+| [0009](0009-discovery.md) | Discovery: agents propose links, the core checks them | Accepted |

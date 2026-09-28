@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test e2e local-test check evals serve demo
+.PHONY: install lint typecheck test e2e local-test check evals url-evals serve demo
 
 install:
 	uv sync
@@ -32,3 +32,8 @@ check: lint typecheck test e2e
 # Per-agent eval sets (see evals/README.md). Calls the real API.
 evals:
 	uv run python evals/run_extractor.py
+	uv run python evals/run_scout.py
+
+# M5 acceptance: links in evals/urls.txt import with no agent (network, no API key).
+url-evals:
+	uv run python evals/run_url_import.py

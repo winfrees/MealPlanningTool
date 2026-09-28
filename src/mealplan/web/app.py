@@ -3,6 +3,7 @@
 Handlers are thin: each calls the same core function as the matching CLI command.
 """
 
+import re
 from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
@@ -20,8 +21,12 @@ from mealplan import db
 from mealplan.agents import choose, credentials
 from mealplan.agents.extractor import RecipeExtractor
 from mealplan.agents.local_extractor import LocalStatus, check_local
+from mealplan.agents.scout import ClaudeScout, RecipeScout, request_text
+from mealplan.agents.scout import chat_prompt as scout_chat_prompt
+from mealplan.agents.scout import parse_link_reply as scout_reply_links
+from mealplan.agents.scout import presets as scout_presets
 from mealplan.config import Settings
-from mealplan.core import inventory, kitchen, library, plan_store, recipe_facts, setup
+from mealplan.core import discovery, inventory, kitchen, library, plan_store, recipe_facts, setup
 from mealplan.core.base_week import rotation
 from mealplan.core.inventory import InventoryError, Shortfall
 from mealplan.core.library import LibraryError
@@ -42,12 +47,14 @@ from mealplan.core.shopping import ListLine
 from mealplan.core.units import format_qty
 from mealplan.ingest import chat_import, review_queue
 from mealplan.ingest.chat_import import ChatImportError
-from mealplan.models.enums import Location, Meal, MealRole, RecipeStatus
+from mealplan.ingest.fetch import Fetcher, fetch_page
+from mealplan.models.enums import Collection, Location, Meal, MealRole, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.schemas import RecipeEdit
 from mealplan.models.tables import Ingredient, Rating, Recipe
 from mealplan.web import auth, launch
 from mealplan.web.importer import ImportJob, ImportRefused, check_pdf
+from mealplan.web.scout_job import ScoutJob
 
 STATIC = Path(__file__).resolve().parent / "static"
 SECURITY_HEADERS = {
@@ -60,6 +67,7 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+MAX_LINKS = 12  # pasted or suggested links checked at once
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
@@ -72,6 +80,40 @@ class ApiKeyBody(BaseModel):
 
 class ReaderBody(BaseModel):
     choice: Literal["auto", "claude", "local", "none"]
+
+
+class DiscoverBody(BaseModel):
+    preset: str | None = None
+    request: str = Field(default="", max_length=500)
+
+
+class LinksBody(BaseModel):
+    urls: str = Field(max_length=10_000)
+    role: MealRole | None = None
+
+
+class ChatLinksBody(BaseModel):
+    reply: str = Field(max_length=200_000)
+    role: MealRole | None = None
+
+
+class AddBody(BaseModel):
+    url: str = Field(max_length=2000)
+    role: MealRole | None = None
+    variant_of: str | None = None
+
+
+def candidate_json(c: discovery.Candidate) -> dict[str, Any]:
+    return {
+        "url": c.url,
+        "verdict": c.verdict,
+        "title": c.title,
+        "site": c.site,
+        "note": c.note,
+        "reasons": c.reasons,
+        "similar": [{"ref": r, "title": t, "score": sc} for r, t, sc in c.similar],
+        "facts": c.facts,
+    }
 
 
 class ChatReplyBody(BaseModel):
@@ -244,6 +286,8 @@ def create_app(
     key_checker: Callable[[str], None] = check_claude_key,
     env_file: Path = Path(".env"),
     local_checker: Callable[[], LocalStatus] | None = None,
+    scout: Callable[[], RecipeScout | None] | None = None,
+    fetcher: Fetcher = fetch_page,
 ) -> FastAPI:
     if settings.web_password is None or not settings.web_password.get_secret_value():
         raise RuntimeError("set MEALPLAN_WEB_PASSWORD before starting the web app")
@@ -277,6 +321,14 @@ def create_app(
     importer = ImportJob(
         engine, manifest, extractor or current_extractor, settings.agent_weekly_budget_usd
     )
+
+    def current_scout() -> RecipeScout | None:
+        if scout is not None:
+            return scout()
+        key = api_key["value"]
+        return ClaudeScout(anthropic.Anthropic(api_key=key)) if key else None
+
+    scout_job = ScoutJob(engine, fetcher, candidate_json, settings.agent_weekly_budget_usd)
     secret = auth.load_secret(settings.web_secret_path)
     limiter = auth.LoginLimiter()
 
@@ -307,6 +359,7 @@ def create_app(
     S = Annotated[Session, Depends(session)]
 
     for error, status in (
+        (discovery.DiscoveryError, 400),
         (ChatImportError, 400),
         (credentials.KeyProblem, 400),
         (ImportRefused, 400),
@@ -427,6 +480,7 @@ def create_app(
         family: str | None = None,
         min_rating: float | None = None,
         status: RecipeStatus = RecipeStatus.APPROVED,
+        collection: Collection | None = None,
     ) -> list[dict[str, Any]]:
         averages = select(Rating.recipe_id, func.avg(Rating.score)).group_by(Rating.recipe_id)
         ratings = {rid: avg for rid, avg in s.execute(averages)}
@@ -437,6 +491,8 @@ def create_app(
             if role and (r.meal_role is None or r.meal_role.value != role):
                 continue
             if tag and tag not in r.tags:
+                continue
+            if collection and r.collection is not collection:
                 continue
             if family and (r.family is None or r.family.name != family):
                 continue
@@ -460,6 +516,13 @@ def create_app(
                 }
             )
         return out
+
+    @app.post("/api/recipes/{ref}/promote")
+    def promote(ref: str, s: S) -> dict[str, str]:
+        """REC-7: move a discovered recipe into the household's own collection by hand."""
+        r = library.get_recipe(s, ref)
+        library.promote(r)
+        return {"ref": r.ref, "collection": r.collection.value}
 
     @app.get("/api/recipes/{ref}/edit")
     def recipe_for_edit(ref: str, s: S) -> dict[str, Any]:
@@ -804,6 +867,87 @@ def create_app(
         partial.replace(source_pdf)
         importer.start(source_pdf)
         return importer.status()
+
+    # --- discovery (M5): links, the scout, and the chat path ---
+
+    def brief(s: Session, body: DiscoverBody) -> tuple[str, MealRole | None, list[str]]:
+        """The request (a preset or the person's words), its meal role, and what's expiring."""
+        chosen = {p.key: p for p in scout_presets(load_prefs(s))}.get(body.preset or "")
+        request = chosen.request if chosen else body.request.strip()
+        if not request:
+            raise HTTPException(400, "choose a preset or say what you're looking for")
+        ids = {i.ingredient_id for i in inventory.expiring(s, today())}
+        names = s.scalars(select(Ingredient.canonical_name).where(Ingredient.id.in_(ids)))
+        return request, chosen.role if chosen else None, sorted(names)
+
+    @app.get("/api/discover")
+    def discover_info(s: S) -> dict[str, Any]:
+        return {
+            "presets": [
+                {"key": p.key, "label": p.label, "request": p.request, "role": p.role.value}
+                for p in scout_presets(load_prefs(s))
+            ],
+            "scout_ready": scout is not None or bool(api_key["value"]),
+            "job": scout_job.status(),
+        }
+
+    def check(
+        s: Session,
+        urls: list[str],
+        role: MealRole | None = None,
+        notes: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        found = discovery.check_urls(
+            s, load_prefs(s), Catalog.from_db(s), urls[:MAX_LINKS], fetcher, role, notes
+        )
+        return [candidate_json(c) for c in found]
+
+    @app.post("/api/discover/check")
+    def discover_check(body: LinksBody, s: S) -> list[dict[str, Any]]:
+        urls = [u for u in re.split(r"\s+", body.urls) if u]
+        if not urls:
+            raise HTTPException(400, "paste one or more recipe links")
+        return check(s, urls, body.role)
+
+    @app.post("/api/discover/scout")
+    def discover_scout(body: DiscoverBody, s: S) -> dict[str, Any]:
+        agent = current_scout()
+        if agent is None:
+            raise HTTPException(400, "the scout needs an Anthropic API key; use a Claude chat")
+        request, role, expiring = brief(s, body)
+        scout_job.start(agent, request_text(request, load_prefs(s), expiring), role)
+        return scout_job.status()
+
+    @app.get("/api/discover/scout")
+    def discover_scout_status() -> dict[str, Any]:
+        return scout_job.status()
+
+    @app.post("/api/discover/chat-prompt")
+    def discover_chat_prompt(body: DiscoverBody, s: S) -> dict[str, str]:
+        request, _, expiring = brief(s, body)
+        return {"prompt": scout_chat_prompt(request, load_prefs(s), expiring)}
+
+    @app.post("/api/discover/chat")
+    def discover_chat(body: ChatLinksBody, s: S) -> list[dict[str, Any]]:
+        suggestions = scout_reply_links(body.reply)
+        if not suggestions:
+            raise HTTPException(400, "no recipe links found in that reply")
+        notes = {x.url: x.reason for x in suggestions}
+        return check(s, [x.url for x in suggestions], body.role, notes)
+
+    @app.post("/api/discover/add")
+    def discover_add(body: AddBody, s: S) -> dict[str, Any]:
+        """Fetch and check the page again (a client never supplies the recipe), then add it
+        as a discovered draft for review (ING-3), optionally as a variant (REC-8)."""
+        [found] = discovery.check_urls(
+            s, load_prefs(s), Catalog.from_db(s), [body.url], fetcher, body.role
+        )
+        recipe = discovery.add_candidate(s, Catalog.from_db(s), found, body.variant_of)
+        return {
+            "ref": recipe.ref,
+            "title": recipe.title,
+            "family": recipe.family.name if recipe.family else None,
+        }
 
     # --- Claude chat import (no API key) ---
 

@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from rich.console import Console
@@ -30,10 +30,13 @@ from mealplan.core.scaling import scale_quantity
 from mealplan.core.units import format_qty
 from mealplan.ingest import review_queue
 from mealplan.ingest.pdf import BudgetExceeded, import_manifest
-from mealplan.models.enums import Collection, Location, Meal, RecipeStatus
+from mealplan.models.enums import Collection, Location, Meal, MealRole, RecipeStatus
 from mealplan.models.manifest import load_manifest
 from mealplan.models.schemas import RecipeDraft
 from mealplan.models.tables import IngestFailure, Ingredient, Recipe
+
+if TYPE_CHECKING:
+    from mealplan.core.discovery import Candidate
 
 app = typer.Typer(help="Household meal planner: plans, prep sessions, and shopping lists.")
 db_app = typer.Typer(help="Database management.")
@@ -51,6 +54,8 @@ app.add_typer(db_app, name="db")
 app.add_typer(manifest_app, name="manifest")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(recipes_app, name="recipes")
+discover_app = typer.Typer(help="Find new recipes on the web (M5): scout, chat prompt, links.")
+app.add_typer(discover_app, name="discover")
 app.add_typer(review_app, name="review")
 app.add_typer(import_app, name="import")
 app.add_typer(prefs_app, name="prefs")
@@ -183,6 +188,160 @@ def recipes_list(
                 ", ".join(r.tags),
             )
         console.print(table)
+
+
+@recipes_app.command("promote")
+def recipes_promote(ref: str) -> None:
+    """Move a discovered recipe into your own collection (REC-7)."""
+    with _session() as s:
+        library.promote(library.get_recipe(s, ref))
+        console.print(f"{ref} is now one of your recipes.")
+
+
+def _show_candidates(candidates: list["Candidate"]) -> None:
+    for c in candidates:
+        colour = {"ok": "green", "duplicate": "yellow"}.get(c.verdict, "red")
+        name = c.title or c.url
+        console.print(f"[{colour}]{c.verdict:10}[/] {name}", highlight=False)
+        detail = [c.url, *c.reasons] + ([f"why: {c.note}"] if c.note else [])
+        console.print("           " + " | ".join(detail), highlight=False)
+
+
+def _add_ok(s: Session, candidates: list["Candidate"]) -> None:
+    from mealplan.core import discovery
+
+    for c in candidates:
+        if c.verdict == "ok":
+            recipe = discovery.add_candidate(s, _catalog(s), c)
+            console.print(f"Added {recipe.ref} {recipe.title} to the review queue.")
+
+
+@import_app.command("url")
+def import_url(
+    urls: Annotated[list[str], typer.Argument(help="Recipe page links.")],
+    dry_run: Annotated[bool, typer.Option(help="Only check them.")] = False,
+    variant_of: Annotated[
+        str | None, typer.Option(help="Add a look-alike as a variant of this recipe (REC-8).")
+    ] = None,
+) -> None:
+    """Import recipes from web pages with no agent (ING-2): checked, then drafts for review."""
+    from mealplan.core import discovery
+
+    with _session() as s:
+        found = discovery.check_urls(s, load_prefs(s), _catalog(s), urls)
+        _show_candidates(found)
+        if dry_run:
+            return
+        for c in found:
+            if c.verdict == "ok" or (c.verdict == "duplicate" and variant_of):
+                recipe = discovery.add_candidate(
+                    s, _catalog(s), c, variant_of if c.verdict == "duplicate" else None
+                )
+                console.print(f"Added {recipe.ref} {recipe.title} to the review queue.")
+
+
+def _brief(s: Session, request: str | None, preset: str | None) -> tuple[str, MealRole | None]:
+    from mealplan.agents.scout import presets
+
+    chosen = {p.key: p for p in presets(load_prefs(s))}.get(preset or "")
+    if preset and chosen is None:
+        console.print("[red]--preset must be soups, lunches or weeknight[/]")
+        raise typer.Exit(1)
+    text = chosen.request if chosen else (request or "").strip()
+    if not text:
+        console.print("[red]Say what you're looking for, or use --preset.[/]")
+        raise typer.Exit(1)
+    return text, chosen.role if chosen else None
+
+
+def _expiring_names(s: Session) -> list[str]:
+    ids = {i.ingredient_id for i in inventory.expiring(s, date.today())}
+    return sorted(s.scalars(select(Ingredient.canonical_name).where(Ingredient.id.in_(ids))))
+
+
+PresetOption = Annotated[
+    str | None, typer.Option(help="soups, lunches or weeknight (the Discover presets).")
+]
+
+
+@discover_app.command("run")
+def discover_run(
+    request: Annotated[str | None, typer.Argument(help="What you're looking for.")] = None,
+    preset: PresetOption = None,
+    add: Annotated[bool, typer.Option(help="Add the ones that fit to the review queue.")] = False,
+) -> None:
+    """Ask the scout (needs an API key); every link it proposes is fetched and checked here."""
+    import anthropic
+
+    from mealplan.agents.extractor import AccountError
+    from mealplan.agents.scout import ClaudeScout, request_text
+    from mealplan.core import discovery
+
+    settings = get_settings()
+    key = settings.anthropic_api_key
+    if key is None:
+        console.print("[red]The scout needs an API key; try `mealctl discover prompt`.[/]")
+        raise typer.Exit(1)
+    scout = ClaudeScout(anthropic.Anthropic(api_key=key.get_secret_value()))
+    with _session() as s:
+        text, role = _brief(s, request, preset)
+        prefs = load_prefs(s)
+        console.print("Searching and checking; this takes a minute or two…")
+        try:
+            found = discovery.scout_candidates(
+                s,
+                prefs,
+                _catalog(s),
+                scout,
+                request_text(text, prefs, _expiring_names(s)),
+                role,
+                weekly_budget_usd=settings.agent_weekly_budget_usd,
+            )
+        except (AccountError, BudgetExceeded, discovery.DiscoveryError) as e:
+            console.print(f"[red]{e}[/]")
+            raise typer.Exit(1) from None
+        _show_candidates(found)
+        if add:
+            _add_ok(s, found)
+
+
+@discover_app.command("prompt")
+def discover_prompt(
+    request: Annotated[str | None, typer.Argument(help="What you're looking for.")] = None,
+    preset: PresetOption = None,
+) -> None:
+    """Print a prompt for a claude.ai chat (no key); then `mealctl discover chat REPLY`."""
+    from mealplan.agents.scout import chat_prompt
+
+    with _session() as s:
+        text, _ = _brief(s, request, preset)
+        typer.echo(chat_prompt(text, load_prefs(s), _expiring_names(s)))
+
+
+@discover_app.command("chat")
+def discover_chat(
+    reply: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Claude's reply.")],
+    add: Annotated[bool, typer.Option(help="Add the ones that fit to the review queue.")] = False,
+) -> None:
+    """Check the links in a pasted chat reply (saved to a file)."""
+    from mealplan.agents.scout import parse_link_reply
+    from mealplan.core import discovery
+
+    suggestions = parse_link_reply(reply.read_text(encoding="utf-8"))
+    if not suggestions:
+        console.print("[red]No recipe links in that reply.[/]")
+        raise typer.Exit(1)
+    with _session() as s:
+        found = discovery.check_urls(
+            s,
+            load_prefs(s),
+            _catalog(s),
+            [x.url for x in suggestions],
+            notes={x.url: x.reason for x in suggestions},
+        )
+        _show_candidates(found)
+        if add:
+            _add_ok(s, found)
 
 
 @recipes_app.command("show")

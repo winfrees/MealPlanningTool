@@ -161,8 +161,10 @@ REC-3 and ING-4), `SkuMatch` (RTL-3), and `AgentCall` (NFR-7).
 
 - **ING-1** PDF import: extract text per page (and page images for scanned PDFs), send to the
   extraction agent, return one or more draft recipes with page references.
-- **ING-2** URL import: try structured data first (JSON-LD schema.org/Recipe via a scraper
-  library); fall back to the agent only when structure is missing.
+- **ING-2** URL import: try structured data first (JSON-LD schema.org/Recipe); fall back to the
+  agent only when structure is missing. Pages are fetched by the app (http(s) to public hosts
+  only) and every find goes through the same check: already in the library, unreadable, breaks a
+  household rule, looks like a recipe already in the library (REC-8), or fits (ADR-0009).
 - **ING-3** All imports land as **draft** in a review queue; approval is a person's action.
 - **ING-4** Store source attribution (title, author, URL or file + page) on every recipe.
 - **ING-5** Chat import without an API key: the app cuts the missing recipes' pages into small
